@@ -13,17 +13,21 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
 # ----------------------------------------
-# CUSTOM STYLE
+# STATE 초기화
+# ----------------------------------------
+if "selected_receipt" not in st.session_state:
+    st.session_state.selected_receipt = None
+
+# ----------------------------------------
+# CSS
 # ----------------------------------------
 table_css = """
 <style>
 body {
     font-family: 'Segoe UI', sans-serif;
-    color: inherit; /* ✅ 시스템 테마 따라감 */
-    background-color: transparent; /* ✅ 시스템 배경 유지 */
+    color: inherit;
+    background-color: transparent;
 }
-
-/* ✅ 테이블은 항상 화이트 카드형 */
 table {
     width: 100%;
     border-collapse: collapse;
@@ -34,54 +38,35 @@ table {
     background-color: #ffffff;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
-
-/* 헤더 스타일 */
 thead {
     background: linear-gradient(90deg, #2b5876, #4e4376);
     color: white;
 }
-
-/* 기본 셀 */
 th, td {
     text-align: left;
     padding: 10px 14px;
-    color: #222; /* ✅ 항상 선명한 글씨 */
+    color: #222;
 }
-
-/* 짝수행 */
 tbody tr:nth-child(even) {
     background-color: #f8f9fa;
 }
-
-/* hover 강조 */
 tbody tr:hover {
     background-color: #eef4ff;
     transition: 0.2s;
 }
-
-/* 링크 버튼 */
-a.receipt-btn {
+button.receipt-btn {
+    background: none;
+    border: none;
     color: #007bff;
-    text-decoration: none;
     font-weight: 600;
+    cursor: pointer;
 }
-a.receipt-btn:hover {
+button.receipt-btn:hover {
     text-decoration: underline;
 }
-
-/* 액션 아이콘 */
 .action-icons {
     font-size: 16px;
     color: #2b5876;
-}
-
-/* Streamlit 다크모드 강제 표색 고정 */
-html[data-theme="dark"] table {
-    background-color: #ffffff !important;
-}
-html[data-theme="dark"] th,
-html[data-theme="dark"] td {
-    color: #222 !important;
 }
 </style>
 """
@@ -92,12 +77,11 @@ html[data-theme="dark"] td {
 if os.path.exists("unnamed.png"):
     logo = Image.open("unnamed.png")
     st.image(logo, width=240)
-
 st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ----------------------------------------
-# FILES
+# FILE PATHS
 # ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
@@ -191,7 +175,7 @@ if os.path.exists(excel_file):
     if reset:
         view_df = df.copy()
 
-    # HTML table
+    # HTML table (rendered via components)
     html = table_css + """
     <table>
         <thead>
@@ -199,14 +183,14 @@ if os.path.exists(excel_file):
                 <th>Date</th><th>Category</th><th>Description</th>
                 <th>Vendor</th><th>Amount</th><th>Receipt</th><th>Action</th>
             </tr>
-        </thead><tbody>
+        </thead>
+        <tbody>
     """
 
+    # Generate rows
     for idx, r in view_df.iterrows():
-        receipt_link = "-"
-        if pd.notna(r["Receipt"]) and os.path.exists(os.path.join(receipt_folder, r["Receipt"])):
-            receipt_link = f"<a href='?view={idx}' class='receipt-btn'>View</a>"
-
+        receipt_btn_html = f"<form><button class='receipt-btn' name='view' value='{idx}' formmethod='post'>View</button></form>" \
+            if pd.notna(r["Receipt"]) else "-"
         html += f"""
         <tr>
             <td>{r['Date'].strftime('%Y-%m-%d')}</td>
@@ -214,42 +198,26 @@ if os.path.exists(excel_file):
             <td>{r['Description']}</td>
             <td>{r['Vendor']}</td>
             <td>Rp {int(r['Amount']):,}</td>
-            <td>{receipt_link}</td>
+            <td>{receipt_btn_html}</td>
             <td class='action-icons'>✏️ 🗑️</td>
         </tr>
         """
 
     html += "</tbody></table>"
 
-    # ✅ Use components.html instead of st.markdown
     components.html(html, height=450, scrolling=True)
 
-    # Modal for receipt preview
-    params = st.query_params
-    if "view" in params:
-        try:
-            idx = int(params["view"])
-            record = view_df.iloc[idx]
-            file_path = os.path.join(receipt_folder, record["Receipt"])
-            if os.path.exists(file_path):
-                with st.modal("🧾 Receipt Preview", key="modal_view"):
-                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                        st.image(file_path, use_container_width=True)
-                    elif file_path.lower().endswith(".pdf"):
-                        st.markdown(f"📄 [Open PDF Receipt]({file_path})")
-                    st.button("Close", on_click=lambda: st.query_params.clear())
-        except Exception:
-            pass
+    # Modal handler
+    if st.session_state.selected_receipt:
+        with st.modal("🧾 Receipt Preview"):
+            file_path = st.session_state.selected_receipt
+            if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+                st.image(file_path, use_container_width=True)
+            elif file_path.lower().endswith(".pdf"):
+                st.markdown(f"📄 [Open PDF Receipt]({file_path})")
+            if st.button("Close"):
+                st.session_state.selected_receipt = None
+                st.rerun()
 
-    # Summary
-    st.markdown("---")
-    st.subheader("📊 Summary (Filtered Data)")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.dataframe(view_df.groupby("Category")["Amount"].sum().reset_index(), use_container_width=True)
-    with col2:
-        st.dataframe(view_df.groupby("Month")["Amount"].sum().reset_index(), use_container_width=True)
 else:
     st.info("No records yet.")
-
-
