@@ -20,7 +20,10 @@ table_css = """
 body {
     font-family: 'Segoe UI', sans-serif;
     color: #222;
+    background-color: #ffffff;
 }
+
+/* 표 기본 설정 */
 table {
     width: 100%;
     border-collapse: collapse;
@@ -30,21 +33,37 @@ table {
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
+
+/* 헤더 스타일 */
 thead {
     background: linear-gradient(90deg, #2b5876, #4e4376);
     color: white;
 }
+
+/* 본문 행 기본 배경 */
+tbody tr {
+    background-color: #ffffff;  /* ✅ 기본 흰색 고정 */
+    color: #222;
+}
+
+/* 짝수행 */
+tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* hover 효과 */
+tbody tr:hover {
+    background-color: #e9f3ff;
+    transition: 0.2s;
+}
+
+/* 셀 내부 */
 th, td {
     text-align: left;
     padding: 10px 14px;
 }
-tbody tr:nth-child(even) {
-    background: #f8f9fa;
-}
-tbody tr:hover {
-    background: #e9f3ff;
-    transition: 0.2s;
-}
+
+/* 링크 및 버튼 */
 a.receipt-btn {
     color: #007bff;
     text-decoration: none;
@@ -53,8 +72,18 @@ a.receipt-btn {
 a.receipt-btn:hover {
     text-decoration: underline;
 }
+
+/* 액션 아이콘 */
 .action-icons {
     font-size: 16px;
+}
+
+/* Streamlit 다크모드 대비 */
+html[data-theme="dark"] body,
+html[data-theme="dark"] table,
+html[data-theme="dark"] tr {
+    background-color: #ffffff !important;
+    color: #111 !important;
 }
 </style>
 """
@@ -224,3 +253,4 @@ if os.path.exists(excel_file):
         st.dataframe(view_df.groupby("Month")["Amount"].sum().reset_index(), use_container_width=True)
 else:
     st.info("No records yet.")
+
