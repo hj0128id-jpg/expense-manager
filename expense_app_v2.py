@@ -88,7 +88,7 @@ if os.path.exists(excel_file):
     gb.configure_column("Date", editable=True)
     gb.configure_column("Category", editable=True)
     gb.configure_columns(["Description","Vendor","Amount","Receipt"], editable=False)
-    gb.configure_selection("single")
+    
     grid_options = gb.build()
 
     grid_response = AgGrid(
@@ -153,3 +153,4 @@ if os.path.exists(excel_file):
 
 else:
     st.info("No data saved yet.")
+
