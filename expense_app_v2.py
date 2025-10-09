@@ -134,9 +134,10 @@ if os.path.exists(excel_file):
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine="openpyxl") as writer:
                 filtered.to_excel(writer, index=False, sheet_name=sel)
-            st.download_button(
-                label=f"📤 Download {sel}.xlsx",
-                data=buf.getvalue(),
-                file_name=f"DuckSan_Expense_{sel}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+           st.download_button(
+    label=f"📤 Download {sel}.xlsx",
+    data=buf.getvalue(),
+    file_name=f"DuckSan_Expense_{sel}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 
