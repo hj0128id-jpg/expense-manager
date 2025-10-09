@@ -73,6 +73,7 @@ tr:hover { background-color: #eef3ff; }
 }
 
 /* ✅ Summary 테이블 전용 */
+/* ✅ Summary 테이블 전용 */
 .summary-table {
   width: 100%;
   border-collapse: collapse;
@@ -84,27 +85,32 @@ tr:hover { background-color: #eef3ff; }
   border: 1px solid #ccc;
   padding: 8px 10px;
   text-align: left;
+  background: transparent; /* ✅ 헤더 배경 제거 */
+  color: black;
 }
 .summary-table th {
-  background: linear-gradient(90deg, #2b5876, #4e4376);
-  color: white;
+  font-weight: 600;
+  background: transparent !important; /* ✅ 색깔 제거 */
+  color: black;
 }
 .summary-table tr:nth-child(even) { background-color: #fafafa; }
 .summary-table tr:hover { background-color: #eef3ff; }
 
-/* 다크모드 Summary */
+/* 🌙 다크모드 */
 @media (prefers-color-scheme: dark) {
   .summary-table {
     background-color: transparent !important;
     color: #f0f0f0 !important;
   }
   .summary-table th {
-    background: linear-gradient(90deg, #3b7dd8, #4e4376);
+    background: transparent !important;
+    color: #f0f0f0 !important; /* ✅ 다크모드도 회색톤 글씨 */
   }
   .summary-table td { border-color: #555; }
   .summary-table tr:nth-child(even) { background-color: #232323; }
   .summary-table tr:hover { background-color: #303030; }
 }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -305,3 +311,4 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.markdown(mon_sum.to_html(index=False, classes='summary-table'), unsafe_allow_html=True)
+
