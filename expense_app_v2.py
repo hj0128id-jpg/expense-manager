@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from PIL import Image
 from datetime import datetime
+import time
 
 # ----------------------------------------
 # PAGE CONFIG
@@ -16,23 +17,34 @@ st.markdown("""
     <style>
     .record-row {
         display: grid;
-        grid-template-columns: 140px 160px 250px 160px 120px 150px;
+        grid-template-columns: 140px 160px 250px 160px 120px 100px;
         padding: 6px 0;
-        border-bottom: 1px solid #ccc;
+        border-bottom: 1px solid #e0e0e0;
         align-items: center;
     }
     .record-row div {
         padding-left: 6px;
+        font-size: 14px;
     }
     .record-header {
         display: grid;
-        grid-template-columns: 140px 160px 250px 160px 120px 150px;
+        grid-template-columns: 140px 160px 250px 160px 120px 100px;
         font-weight: bold;
         background-color: #2b5876;
         color: white;
         padding: 8px 0;
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
+    }
+    .small-btn {
+        background-color: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 18px;
+        margin-right: 5px;
+    }
+    .small-btn:hover {
+        opacity: 0.7;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -104,6 +116,8 @@ if st.button("💾 Save"):
 
     df.to_excel(excel_file, index=False)
     st.success("✅ Data saved successfully!")
+    time.sleep(1)
+    st.rerun()
 
 # ----------------------------------------
 # DISPLAY + EDIT / DELETE
@@ -153,7 +167,17 @@ if os.path.exists(excel_file):
         edit_key = f"edit_{idx}"
         delete_key = f"delete_{idx}"
 
-        if cols[5].button("✏️ Edit", key=edit_key):
+        c = cols[5]
+        c.markdown(
+            f"""
+            <button class='small-btn' id='edit_{idx}'>✏️</button>
+            <button class='small-btn' id='delete_{idx}'>🗑️</button>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # Streamlit native buttons (invisible CSS buttons for actions)
+        if c.button("✏️", key=edit_key):
             with st.form(f"edit_form_{idx}"):
                 st.write("**✏️ Edit Record**")
                 new_date = st.date_input("Date", row["Date"])
@@ -173,19 +197,16 @@ if os.path.exists(excel_file):
                     df.loc[row.name, "Amount"] = new_amount
                     df.to_excel(excel_file, index=False)
                     st.success("✅ Record updated successfully!")
-                    try:
-                        st.rerun()
-                    except:
-                        st.info("Please manually refresh the page.")
+                    time.sleep(0.5)
+                    st.rerun()
 
-        if cols[5].button("🗑 Delete", key=delete_key):
+        if c.button("🗑️", key=delete_key):
             df = df.drop(row.name).reset_index(drop=True)
             df.to_excel(excel_file, index=False)
-            st.warning(f"🗑 Record deleted: {row['Description']}")
-            try:
-                st.rerun()
-            except:
-                st.info("Please manually refresh the page.")
+            st.success(f"🗑️ Deleted: {row['Description']}")
+            time.sleep(0.5)
+            st.rerun()
+
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ----------------------------------------
@@ -200,7 +221,4 @@ if os.path.exists(excel_file):
         st.dataframe(cat_summary)
     with col2:
         month_summary = filtered_df.groupby("Month")["Amount"].sum().reset_index()
-        st.write("**Total by Month**")
-        st.dataframe(month_summary)
-else:
-    st.info("No data saved yet.")
+        st.write
