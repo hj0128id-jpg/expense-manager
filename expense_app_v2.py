@@ -195,7 +195,7 @@ if os.path.exists(excel_file):
                     time.sleep(0.5)
                     st.rerun()
 
-        # ✅ View (확장형)
+        # ✅ View (expand)
         if st.session_state.view_index == idx:
             exp = st.expander("🧾 Receipt Preview", expanded=True)
             with exp:
@@ -209,9 +209,9 @@ if os.path.exists(excel_file):
                     st.warning("⚠️ File not found.")
                 if st.button("Close Preview", key=f"close_view_{idx}"):
                     st.session_state.view_index = None
-                    st.experimental_rerun()
+                    st.rerun()
 
-        # ✅ Edit (확장형)
+        # ✅ Edit (expand)
         if st.session_state.edit_index == idx:
             with st.expander("✏️ Edit Record", expanded=True):
                 edit_date = st.date_input("Date", value=row["Date"], key=f"edit_date_{idx}")
@@ -238,13 +238,13 @@ if os.path.exists(excel_file):
                         st.success("✅ Updated successfully!")
                         st.session_state.edit_index = None
                         time.sleep(0.5)
-                        st.experimental_rerun()
+                        st.rerun()
                 with c2:
                     if st.button("Cancel", key=f"cancel_edit_{idx}"):
                         st.session_state.edit_index = None
-                        st.experimental_rerun()
+                        st.rerun()
 
-    # ✅ Summary Section (필터 반영)
+    # ✅ Summary Section (Filtered Data)
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
 
