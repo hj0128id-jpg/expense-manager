@@ -173,13 +173,19 @@ if os.path.exists(excel_file):
                     df.loc[row.name, "Amount"] = new_amount
                     df.to_excel(excel_file, index=False)
                     st.success("✅ Record updated successfully!")
-                    st.experimental_rerun()
+                    try:
+                        st.rerun()
+                    except:
+                        st.info("Please manually refresh the page.")
 
         if cols[5].button("🗑 Delete", key=delete_key):
             df = df.drop(row.name).reset_index(drop=True)
             df.to_excel(excel_file, index=False)
             st.warning(f"🗑 Record deleted: {row['Description']}")
-            st.experimental_rerun()
+            try:
+                st.rerun()
+            except:
+                st.info("Please manually refresh the page.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ----------------------------------------
