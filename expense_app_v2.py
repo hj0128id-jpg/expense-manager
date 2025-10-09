@@ -36,14 +36,15 @@ st.markdown("""
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
     }
-    .small-btn {
-        background-color: transparent;
-        border: none;
+    .stButton>button {
+        font-size: 16px !important;
+        padding: 2px 4px !important;
+        margin: 0 2px !important;
+        border: none !important;
+        background: none !important;
         cursor: pointer;
-        font-size: 18px;
-        margin-right: 5px;
     }
-    .small-btn:hover {
+    .stButton>button:hover {
         opacity: 0.7;
     }
     </style>
@@ -116,7 +117,7 @@ if st.button("💾 Save"):
 
     df.to_excel(excel_file, index=False)
     st.success("✅ Data saved successfully!")
-    time.sleep(1)
+    time.sleep(0.5)
     st.rerun()
 
 # ----------------------------------------
@@ -164,48 +165,37 @@ if os.path.exists(excel_file):
         cols[3].write(row["Vendor"])
         cols[4].write(f"Rp {int(row['Amount']):,}")
 
-        edit_key = f"edit_{idx}"
-        delete_key = f"delete_{idx}"
+        with cols[5]:
+            c1, c2 = st.columns(2)
+            if c1.button("✏️", key=f"edit_{idx}"):
+                with st.form(f"edit_form_{idx}"):
+                    st.write("**✏️ Edit Record**")
+                    new_date = st.date_input("Date", row["Date"])
+                    new_category = st.selectbox("Category",
+                        ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
+                        index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"])
+                    )
+                    new_desc = st.text_input("Description", row["Description"])
+                    new_vendor = st.text_input("Vendor", row["Vendor"])
+                    new_amount = st.number_input("Amount (Rp)", value=int(row["Amount"]), step=1000)
+                    submitted = st.form_submit_button("💾 Update")
+                    if submitted:
+                        df.loc[row.name, "Date"] = new_date
+                        df.loc[row.name, "Category"] = new_category
+                        df.loc[row.name, "Description"] = new_desc
+                        df.loc[row.name, "Vendor"] = new_vendor
+                        df.loc[row.name, "Amount"] = new_amount
+                        df.to_excel(excel_file, index=False)
+                        st.success("✅ Record updated successfully!")
+                        time.sleep(0.3)
+                        st.rerun()
 
-        c = cols[5]
-        c.markdown(
-            f"""
-            <button class='small-btn' id='edit_{idx}'>✏️</button>
-            <button class='small-btn' id='delete_{idx}'>🗑️</button>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Streamlit native buttons (invisible CSS buttons for actions)
-        if c.button("✏️", key=edit_key):
-            with st.form(f"edit_form_{idx}"):
-                st.write("**✏️ Edit Record**")
-                new_date = st.date_input("Date", row["Date"])
-                new_category = st.selectbox("Category", 
-                    ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
-                    index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"])
-                )
-                new_desc = st.text_input("Description", row["Description"])
-                new_vendor = st.text_input("Vendor", row["Vendor"])
-                new_amount = st.number_input("Amount (Rp)", value=int(row["Amount"]), step=1000)
-                submitted = st.form_submit_button("💾 Update")
-                if submitted:
-                    df.loc[row.name, "Date"] = new_date
-                    df.loc[row.name, "Category"] = new_category
-                    df.loc[row.name, "Description"] = new_desc
-                    df.loc[row.name, "Vendor"] = new_vendor
-                    df.loc[row.name, "Amount"] = new_amount
-                    df.to_excel(excel_file, index=False)
-                    st.success("✅ Record updated successfully!")
-                    time.sleep(0.5)
-                    st.rerun()
-
-        if c.button("🗑️", key=delete_key):
-            df = df.drop(row.name).reset_index(drop=True)
-            df.to_excel(excel_file, index=False)
-            st.success(f"🗑️ Deleted: {row['Description']}")
-            time.sleep(0.5)
-            st.rerun()
+            if c2.button("🗑️", key=f"delete_{idx}"):
+                df = df.drop(row.name).reset_index(drop=True)
+                df.to_excel(excel_file, index=False)
+                st.success(f"🗑️ Deleted: {row['Description']}")
+                time.sleep(0.3)
+                st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -221,4 +211,7 @@ if os.path.exists(excel_file):
         st.dataframe(cat_summary)
     with col2:
         month_summary = filtered_df.groupby("Month")["Amount"].sum().reset_index()
-        st.write
+        st.write("**Total by Month**")
+        st.dataframe(month_summary)
+else:
+    st.info("No data saved yet.")
