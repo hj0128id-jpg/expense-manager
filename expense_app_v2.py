@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from PIL import Image
 from datetime import datetime
+from io import BytesIO
 import time
 
 # ----------------------------------------
@@ -15,10 +16,6 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide", initial
 # ----------------------------------------
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
-if "view_index" not in st.session_state:
-    st.session_state.view_index = None
-if "edit_index" not in st.session_state:
-    st.session_state.edit_index = None
 
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
@@ -127,10 +124,10 @@ if st.button("💾 Save Record"):
     new = pd.DataFrame({
         "Date": [date],
         "Category": [category],
-        "Description": [description],
-        "Vendor": [vendor],
+        "Description": [description if description else "-"],
+        "Vendor": [vendor if vendor else "-"],
         "Amount": [amount],
-        "Receipt": [receipt_name]
+        "Receipt": [receipt_name if receipt_name else "-"]
     })
     if os.path.exists(excel_file):
         old = pd.read_excel(excel_file)
@@ -146,15 +143,15 @@ if st.button("💾 Save Record"):
 # DISPLAY SECTION
 # ----------------------------------------
 if os.path.exists(excel_file):
-    df = pd.read_excel(excel_file)
-    df["Date"] = pd.to_datetime(df["Date"])
+    df = pd.read_excel(excel_file).fillna("-")
+    df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
     # 필터
-    months = sorted(df["Month"].unique(), reverse=True)
+    months = sorted(df["Month"].dropna().unique(), reverse=True)
     f1, f2, f3 = st.columns([1.5, 1.5, 1])
     with f1:
-        month_filter = st.selectbox("📅 Filter by Month", ["All"] + months)
+        month_filter = st.selectbox("📅 Filter by Month", ["All"] + list(months))
     with f2:
         cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
     with f3:
@@ -172,34 +169,37 @@ if os.path.exists(excel_file):
     asc_flag = True if st.session_state.sort_order == "asc" else False
     view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
-    st.markdown(f"### 📋 Saved Records ({'⬆️ Ascending' if asc_flag else '⬇️ Descending'})")
+    # 헤더 + 다운로드 버튼
+    h1, h2 = st.columns([3, 1])
+    with h1:
+        st.markdown(f"### 📋 Saved Records ({'⬆️ Ascending' if asc_flag else '⬇️ Descending'})")
+    with h2:
+        if os.path.exists(excel_file):
+            with st.popover("📥 Download Excel"):
+                month_opt = st.selectbox("Select month to export", ["All"] + list(months))
+                export_df = df if month_opt == "All" else df[df["Month"] == month_opt]
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    export_df.to_excel(writer, index=False, sheet_name="Expenses")
+                st.download_button(
+                    label=f"📤 Download {month_opt}.xlsx",
+                    data=buffer.getvalue(),
+                    file_name=f"DuckSan_Expense_{month_opt}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
     if st.button("🔁 Toggle Sort Order"):
         st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
         st.rerun()
 
     # 테이블
-    table_html = "<table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Vendor</th><th>Amount</th><th>Actions</th></tr></thead><tbody>"
-    for idx, r in view_df.iterrows():
-        btn_view = f"<button class='action-btn' onclick=\"window.location.href='?view={idx}'\">View</button>"
-        btn_edit = f"<button class='action-btn' onclick=\"window.location.href='?edit={idx}'\">Edit</button>"
-        btn_delete = f"<button class='action-btn' onclick=\"window.location.href='?delete={idx}'\">Delete</button>"
-        table_html += f"<tr><td data-label='Date'>{r.Date.strftime('%Y-%m-%d')}</td><td data-label='Category'>{r.Category}</td><td data-label='Description'>{r.Description}</td><td data-label='Vendor'>{r.Vendor}</td><td data-label='Amount'>Rp {int(r.Amount):,}</td><td data-label='Actions'>{btn_view} {btn_edit} {btn_delete}</td></tr>"
+    table_html = "<table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Vendor</th><th>Amount</th><th>Receipt</th></tr></thead><tbody>"
+    for _, r in view_df.iterrows():
+        table_html += f"<tr><td data-label='Date'>{r['Date'].strftime('%Y-%m-%d') if pd.notna(r['Date']) else '-'}</td><td data-label='Category'>{r['Category']}</td><td data-label='Description'>{r['Description']}</td><td data-label='Vendor'>{r['Vendor']}</td><td data-label='Amount'>Rp {int(r['Amount']):,}</td><td data-label='Receipt'>{r['Receipt'] if r['Receipt'] != '-' else '-'}</td></tr>"
     table_html += "</tbody></table>"
     st.markdown(table_html, unsafe_allow_html=True)
 
-    # --- 실제 동작 버튼 (진짜 작동 부분) ---
-    for idx, row in view_df.iterrows():
-        # View 모드
-        if f"view_{idx}" in st.session_state and st.session_state[f"view_{idx}"]:
-            st.image(os.path.join(receipt_folder, str(row["Receipt"])), width=500)
-        # Edit 모드
-        if f"edit_{idx}" in st.session_state and st.session_state[f"edit_{idx}"]:
-            st.write("수정창 열기")
-        # Delete 모드
-        if f"delete_{idx}" in st.session_state and st.session_state[f"delete_{idx}"]:
-            st.write("삭제 기능 작동")
-
-    # Summary
+    # 요약
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
     cat_sum = view_df.groupby("Category", as_index=False)["Amount"].sum()
@@ -214,5 +214,6 @@ if os.path.exists(excel_file):
     with c2:
         st.write("**By Month**")
         st.table(mon_sum)
+
 else:
     st.info("No records yet.")
