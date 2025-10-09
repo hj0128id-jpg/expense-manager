@@ -11,6 +11,54 @@ import time
 # ----------------------------------------
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
+st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
+
+# ✅ 표 줄 추가 CSS 블록 시작
+st.markdown("""
+<style>
+body { font-family: 'Segoe UI', sans-serif; }
+
+/* ✅ 표 줄 강조 스타일 */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #ccc; /* 바깥 테두리 */
+}
+th, td {
+  border: 1px solid #ccc;  /* 내부 줄 */
+  padding: 8px;
+  text-align: left;
+  font-size: 14px;
+  vertical-align: middle;
+}
+th {
+  background: linear-gradient(90deg, #2b5876, #4e4376);
+  color: white;
+  border-bottom: 2px solid #999; /* 헤더 하단 구분선 */
+}
+tr:nth-child(even) {
+  background-color: #f9f9f9;  /* 줄무늬 효과 */
+}
+tr:hover {
+  background-color: #eef3ff; /* 마우스 올릴 때 색상 */
+}
+
+/* 🌙 다크모드 */
+@media (prefers-color-scheme: dark) {
+  table { background-color: #1e1e1e; color: #fff; border-color: #555; }
+  th { background: linear-gradient(90deg, #3b7dd8, #4e4376); border-color: #666; }
+  td { border-color: #444; }
+  tr:nth-child(even) { background-color: #252525; }
+  tr:hover { background-color: #333; }
+}
+</style>
+""", unsafe_allow_html=True)
+# ✅ 표 줄 추가 CSS 블록 끝
+
+
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
 os.makedirs(receipt_folder, exist_ok=True)
@@ -221,3 +269,4 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.table(mon_sum)
+
