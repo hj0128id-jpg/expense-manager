@@ -5,7 +5,6 @@ from PIL import Image
 from datetime import datetime
 import time
 from io import BytesIO
-import streamlit.components.v1 as components
 
 # ----------------------------------------
 # PAGE CONFIG
@@ -13,63 +12,31 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
 # ----------------------------------------
-# STATE 초기화
+# STATE
 # ----------------------------------------
-if "selected_receipt" not in st.session_state:
-    st.session_state.selected_receipt = None
+if "view_receipt" not in st.session_state:
+    st.session_state.view_receipt = None
 
 # ----------------------------------------
-# CSS
+# STYLES
 # ----------------------------------------
-table_css = """
+st.markdown("""
 <style>
-body {
-    font-family: 'Segoe UI', sans-serif;
-    color: inherit;
-    background-color: transparent;
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-size: 14px;
-    border-radius: 10px;
-    overflow: hidden;
-    background-color: #ffffff;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-}
-thead {
-    background: linear-gradient(90deg, #2b5876, #4e4376);
-    color: white;
-}
-th, td {
-    text-align: left;
-    padding: 10px 14px;
-    color: #222;
-}
-tbody tr:nth-child(even) {
-    background-color: #f8f9fa;
-}
-tbody tr:hover {
-    background-color: #eef4ff;
-    transition: 0.2s;
-}
-button.receipt-btn {
-    background: none;
+.stButton > button {
     border: none;
+    background-color: transparent;
     color: #007bff;
     font-weight: 600;
     cursor: pointer;
 }
-button.receipt-btn:hover {
+.stButton > button:hover {
     text-decoration: underline;
 }
-.action-icons {
-    font-size: 16px;
-    color: #2b5876;
+.dataframe tbody tr:hover {
+    background-color: #eef4ff !important;
 }
 </style>
-"""
+""", unsafe_allow_html=True)
 
 # ----------------------------------------
 # HEADER
@@ -77,11 +44,12 @@ button.receipt-btn:hover {
 if os.path.exists("unnamed.png"):
     logo = Image.open("unnamed.png")
     st.image(logo, width=240)
+
 st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ----------------------------------------
-# FILE PATHS
+# PATHS
 # ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
@@ -94,10 +62,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     date = st.date_input("Date", datetime.today())
 with col2:
-    category = st.selectbox(
-        "Category",
-        ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
-    )
+    category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"])
 with col3:
     amount = st.number_input("Amount (Rp)", min_value=0, step=1000)
 
@@ -113,6 +78,9 @@ if receipt_file is not None:
         f.write(receipt_bytes)
     st.success(f"📎 Uploaded: {receipt_name}")
 
+# ----------------------------------------
+# SAVE RECORD
+# ----------------------------------------
 if st.button("💾 Save Record"):
     new = pd.DataFrame({
         "Date": [date],
@@ -122,14 +90,16 @@ if st.button("💾 Save Record"):
         "Amount": [amount],
         "Receipt": [receipt_name]
     })
+
     if os.path.exists(excel_file):
-        df_old = pd.read_excel(excel_file)
-        df = pd.concat([df_old, new], ignore_index=True)
+        old = pd.read_excel(excel_file)
+        df = pd.concat([old, new], ignore_index=True)
     else:
         df = new
+
     df.to_excel(excel_file, index=False)
-    st.success("✅ Saved successfully!")
-    time.sleep(0.4)
+    st.success("✅ Record saved successfully!")
+    time.sleep(0.5)
     st.rerun()
 
 # ----------------------------------------
@@ -140,32 +110,32 @@ if os.path.exists(excel_file):
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-    c1, c2 = st.columns([4, 1])
-    with c1:
+    left, right = st.columns([4, 1])
+    with left:
         st.subheader("📋 Saved Records")
-    with c2:
+    with right:
         months = sorted(df["Month"].unique(), reverse=True)
         with st.popover("📥 Download Excel"):
-            sel_month = st.selectbox("Select month", months)
-            filt = df[df["Month"] == sel_month]
+            sel = st.selectbox("Select month", months)
+            filtered = df[df["Month"] == sel]
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                filt.to_excel(writer, index=False, sheet_name=sel_month)
+                filtered.to_excel(writer, index=False, sheet_name=sel)
             st.download_button(
-                f"📤 Download {sel_month}.xlsx",
+                label=f"📤 Download {sel}.xlsx",
                 data=buf.getvalue(),
-                file_name=f"DuckSan_Expense_{sel_month}.xlsx",
+                file_name=f"DuckSan_Expense_{sel}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
     # Filters
     f1, f2, f3 = st.columns([1.5, 1.5, 1])
     with f1:
-        month_filter = st.selectbox("📅 Month Filter", ["All"] + months)
+        month_filter = st.selectbox("📅 Filter by Month", ["All"] + months)
     with f2:
-        cat_filter = st.selectbox("📂 Category Filter", ["All"] + sorted(df["Category"].unique()))
+        cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
     with f3:
-        reset = st.button("🔄 Reset")
+        reset = st.button("🔄 Reset Filters")
 
     view_df = df.copy()
     if month_filter != "All":
@@ -175,49 +145,47 @@ if os.path.exists(excel_file):
     if reset:
         view_df = df.copy()
 
-    # HTML table (rendered via components)
-    html = table_css + """
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th><th>Category</th><th>Description</th>
-                <th>Vendor</th><th>Amount</th><th>Receipt</th><th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-    """
+    st.markdown("### 💾 Expense Records")
 
-    # Generate rows
-    for idx, r in view_df.iterrows():
-        receipt_btn_html = f"<form><button class='receipt-btn' name='view' value='{idx}' formmethod='post'>View</button></form>" \
-            if pd.notna(r["Receipt"]) else "-"
-        html += f"""
-        <tr>
-            <td>{r['Date'].strftime('%Y-%m-%d')}</td>
-            <td>{r['Category']}</td>
-            <td>{r['Description']}</td>
-            <td>{r['Vendor']}</td>
-            <td>Rp {int(r['Amount']):,}</td>
-            <td>{receipt_btn_html}</td>
-            <td class='action-icons'>✏️ 🗑️</td>
-        </tr>
-        """
+    # render records manually (Streamlit-native)
+    for idx, row in view_df.iterrows():
+        cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
+        cols[0].write(row["Date"].strftime("%Y-%m-%d"))
+        cols[1].write(row["Category"])
+        cols[2].write(row["Description"])
+        cols[3].write(row["Vendor"])
+        cols[4].write(f"Rp {int(row['Amount']):,}")
+        with cols[5]:
+            if pd.notna(row["Receipt"]):
+                if st.button("View", key=f"view_{idx}"):
+                    st.session_state.view_receipt = os.path.join(receipt_folder, row["Receipt"])
+                    st.rerun()
+            else:
+                st.write("-")
 
-    html += "</tbody></table>"
-
-    components.html(html, height=450, scrolling=True)
-
-    # Modal handler
-    if st.session_state.selected_receipt:
+    # Show modal when user clicked "View"
+    if st.session_state.view_receipt:
         with st.modal("🧾 Receipt Preview"):
-            file_path = st.session_state.selected_receipt
-            if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                st.image(file_path, use_container_width=True)
-            elif file_path.lower().endswith(".pdf"):
-                st.markdown(f"📄 [Open PDF Receipt]({file_path})")
+            path = st.session_state.view_receipt
+            if path.lower().endswith((".png", ".jpg", ".jpeg")):
+                st.image(path, use_container_width=True)
+            elif path.lower().endswith(".pdf"):
+                st.markdown(f"📄 [Open PDF Receipt]({path})")
             if st.button("Close"):
-                st.session_state.selected_receipt = None
+                st.session_state.view_receipt = None
                 st.rerun()
 
+    # ----------------------------------------
+    # SUMMARY SECTION
+    # ----------------------------------------
+    st.markdown("---")
+    st.subheader("📊 Summary (Filtered Data)")
+    c1, c2 = st.columns(2)
+    with c1:
+        cat_sum = view_df.groupby("Category")["Amount"].sum().reset_index()
+        st.dataframe(cat_sum, use_container_width=True)
+    with c2:
+        mon_sum = view_df.groupby("Month")["Amount"].sum().reset_index()
+        st.dataframe(mon_sum, use_container_width=True)
 else:
     st.info("No records yet.")
