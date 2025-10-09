@@ -56,7 +56,7 @@ st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System<
 st.markdown("---")
 
 # ----------------------------------------
-# PATHS
+# FILE PATHS
 # ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
@@ -195,22 +195,23 @@ if os.path.exists(excel_file):
                     time.sleep(0.5)
                     st.rerun()
 
-    # View (expand)
-if st.session_state.view_index == idx:
-    with st.expander("🧾 Receipt Preview", expanded=True):
-        file_path = os.path.join(receipt_folder, str(row["Receipt"]))
-        if os.path.exists(file_path):
-            if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                st.image(file_path, width=600)  # ✅ 이미지 크기 조정
-            elif file_path.lower().endswith(".pdf"):
-                st.markdown(f"📄 [Open PDF Receipt]({file_path})")
-        else:
-            st.warning("⚠️ File not found.")
-        if st.button("Close Preview", key=f"close_view_{idx}"):
-            st.session_state.view_index = None
-            st.rerun()
+        # ✅ View (확장형)
+        if st.session_state.view_index == idx:
+            exp = st.expander("🧾 Receipt Preview", expanded=True)
+            with exp:
+                file_path = os.path.join(receipt_folder, str(row["Receipt"]))
+                if os.path.exists(file_path):
+                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+                        st.image(file_path, width=600, caption="Receipt Preview")
+                    elif file_path.lower().endswith(".pdf"):
+                        st.markdown(f"📄 [Open PDF Receipt]({file_path})", unsafe_allow_html=True)
+                else:
+                    st.warning("⚠️ File not found.")
+                if st.button("Close Preview", key=f"close_view_{idx}"):
+                    st.session_state.view_index = None
+                    st.experimental_rerun()
 
-        # Edit (expand)
+        # ✅ Edit (확장형)
         if st.session_state.edit_index == idx:
             with st.expander("✏️ Edit Record", expanded=True):
                 edit_date = st.date_input("Date", value=row["Date"], key=f"edit_date_{idx}")
@@ -237,20 +238,20 @@ if st.session_state.view_index == idx:
                         st.success("✅ Updated successfully!")
                         st.session_state.edit_index = None
                         time.sleep(0.5)
-                        st.rerun()
+                        st.experimental_rerun()
                 with c2:
                     if st.button("Cancel", key=f"cancel_edit_{idx}"):
                         st.session_state.edit_index = None
-                        st.rerun()
+                        st.experimental_rerun()
 
-    # Summary
+    # ✅ Summary Section (필터 반영)
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
 
-    cat_sum = view_df.groupby("Category")["Amount"].sum().reset_index()
+    cat_sum = view_df.groupby("Category", as_index=False)["Amount"].sum()
     cat_sum["Amount"] = cat_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
-    mon_sum = view_df.groupby("Month")["Amount"].sum().reset_index()
+    mon_sum = view_df.groupby("Month", as_index=False)["Amount"].sum()
     mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
     c1, c2 = st.columns(2)
@@ -263,4 +264,3 @@ if st.session_state.view_index == idx:
 
 else:
     st.info("No records yet.")
-
