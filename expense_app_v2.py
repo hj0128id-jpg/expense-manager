@@ -297,9 +297,11 @@ mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 c1, c2 = st.columns(2)
 with c1:
     st.write("**By Category**")
-    st.table(cat_sum)
+    st.markdown(cat_sum.to_html(index=False, border=1), unsafe_allow_html=True)
 with c2:
     st.write("**By Month**")
-    st.table(mon_sum)
+    st.markdown(mon_sum.to_html(index=False, border=1), unsafe_allow_html=True)
+
+
 
 
