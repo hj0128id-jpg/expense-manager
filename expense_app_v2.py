@@ -4,7 +4,7 @@ import os
 from PIL import Image
 from datetime import datetime
 from io import BytesIO
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode, GridUpdateMode
 
 # ----------------------------------------
 # Basic Config
@@ -21,7 +21,6 @@ st.markdown("""
         --ag-odd-row-background-color: #fafafa;
         --ag-font-size: 15px;
         border-radius: 10px;
-        overflow: hidden;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -92,58 +91,77 @@ if st.button("💾 Save"):
     st.success("✅ Data saved successfully!")
 
 # ----------------------------------------
-# Display Table
+# Display Table + Popup
 # ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.to_period("M").astype(str)
 
+    # Add 'View' action column
+    df["View"] = "🔍 View"
+
     st.subheader("📋 Saved Records")
 
-    # Add "View" button for receipts
-    for i, row in df.iterrows():
-        if pd.notna(row["Receipt"]) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
-            view_btn = st.button(f"🔍 View - {row['Receipt']}", key=f"view_{i}")
-            if view_btn:
-                with st.modal("🧾 Receipt Preview"):
-                    file_path = os.path.join(receipt_folder, row["Receipt"])
-                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                        st.image(file_path, width=500)
-                    elif file_path.lower().endswith(".pdf"):
-                        st.markdown(f"📄 [Open PDF Receipt]({file_path})")
-                    st.button("Close")
-                    st.stop()
+    # JS: Render View Button
+    cell_renderer = JsCode("""
+        class BtnCellRenderer {
+            init(params) {
+                this.params = params;
+                this.eGui = document.createElement('div');
+                this.eGui.innerHTML = `
+                    <button class="btn-view" style="background:#2b5876;color:white;padding:3px 8px;border:none;border-radius:5px;cursor:pointer;">
+                        🔍 View
+                    </button>`;
+                this.btnClickedHandler = this.btnClickedHandler.bind(this);
+                this.eGui.querySelector('.btn-view').addEventListener('click', this.btnClickedHandler);
+            }
+            btnClickedHandler() {
+                const event = new CustomEvent('viewReceipt', {detail: this.params.data.Receipt});
+                window.dispatchEvent(event);
+            }
+            getGui() {
+                return this.eGui;
+            }
+        }
+    """)
 
-    # Display table
-    gb = GridOptionsBuilder.from_dataframe(df[["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]])
+    gb = GridOptionsBuilder.from_dataframe(df[["Date", "Category", "Description", "Vendor", "Amount", "View"]])
+    gb.configure_column("View", cellRenderer=cell_renderer)
     gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True)
     grid_options = gb.build()
 
-    AgGrid(
+    grid_response = AgGrid(
         df,
         gridOptions=grid_options,
         theme="streamlit",
         height=400,
         fit_columns_on_grid_load=True,
-        update_mode=GridUpdateMode.NO_UPDATE
+        update_mode=GridUpdateMode.NO_UPDATE,
+        allow_unsafe_jscode=True,
+        key="grid1"
     )
 
     # ----------------------------------------
-    # Summary Section
+    # JS Bridge to Python
     # ----------------------------------------
-    st.markdown("---")
-    st.subheader("📊 Summary")
+    receipt_clicked = st.session_state.get("clicked_receipt")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        cat_summary = df.groupby("Category")["Amount"].sum().reset_index()
-        st.write("**Total by Category**")
-        st.dataframe(cat_summary)
-    with col2:
-        month_summary = df.groupby("Month")["Amount"].sum().reset_index()
-        st.write("**Total by Month**")
-        st.dataframe(month_summary)
+    # JavaScript event listener for clicks
+    st.markdown("""
+        <script>
+        window.addEventListener('viewReceipt', (e) => {
+            const receipt = e.detail;
+            fetch(`/set_receipt?file=${receipt}`)
+        });
+        </script>
+    """, unsafe_allow_html=True)
 
-else:
-    st.info("No data saved yet.")
+    # handle popup manually
+    query_params = st.query_params
+    if "file" in query_params:
+        file_name = query_params["file"]
+        file_path = os.path.join(receipt_folder, file_name)
+        if os.path.exists(file_path):
+            with st.modal("🧾 Receipt Preview"):
+                if fi
