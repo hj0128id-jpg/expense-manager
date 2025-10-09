@@ -32,87 +32,54 @@ st.markdown("""
 <style>
 body { font-family: 'Segoe UI', sans-serif; }
 
-/* ✅ 표 기본 스타일 */
-table {
+/* ✅ 공통 표 스타일 (라이트/다크 동일) */
+table, .summary-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
-  background-color: white;
+  background-color: white !important; /* ✅ 항상 하얀색 배경 */
   border-radius: 8px;
-  border: 1px solid #ccc; /* 외곽선 */
+  border: 1px solid #ccc;
 }
-th, td {
-  border: 1px solid #ccc; /* 내부 줄 */
-  padding: 8px;
-  text-align: left;
-  font-size: 14px;
-  vertical-align: middle;
-}
-th {
-  background: linear-gradient(90deg, #2b5876, #4e4376);
-  color: white;
-  border-bottom: 2px solid #999;
-}
-tr:nth-child(even) { background-color: #fafafa; }
-tr:hover { background-color: #eef3ff; }
-
-/* 🌙 다크모드 */
-@media (prefers-color-scheme: dark) {
-  table {
-    background-color: #1e1e1e !important;
-    color: #f0f0f0 !important;
-    border-color: #666 !important;
-  }
-  th {
-    background: linear-gradient(90deg, #3b7dd8, #4e4376) !important;
-    border-color: #666 !important;
-  }
-  td { border-color: #555 !important; }
-  tr:nth-child(even) { background-color: #232323 !important; }
-  tr:hover { background-color: #303030 !important; }
-}
-
-/* ✅ Summary 테이블 전용 */
-/* ✅ Summary 테이블 전용 */
-.summary-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-  font-size: 14px;
-  background: transparent;
-}
-.summary-table th, .summary-table td {
+th, td, .summary-table th, .summary-table td {
   border: 1px solid #ccc;
   padding: 8px 10px;
   text-align: left;
-  background: transparent; /* ✅ 헤더 배경 제거 */
-  color: black;
+  font-size: 14px;
+  vertical-align: middle;
+  color: black; /* 기본 검정 글씨 */
 }
-.summary-table th {
+th, .summary-table th {
   font-weight: 600;
-  background: transparent !important; /* ✅ 색깔 제거 */
+  background: transparent !important; /* ✅ 헤더 색 제거 */
   color: black;
 }
-.summary-table tr:nth-child(even) { background-color: #fafafa; }
-.summary-table tr:hover { background-color: #eef3ff; }
-
-/* 🌙 다크모드 */
-@media (prefers-color-scheme: dark) {
-  .summary-table {
-    background-color: transparent !important;
-    color: #f0f0f0 !important;
-  }
-  .summary-table th {
-    background: transparent !important;
-    color: #f0f0f0 !important; /* ✅ 다크모드도 회색톤 글씨 */
-  }
-  .summary-table td { border-color: #555; }
-  .summary-table tr:nth-child(even) { background-color: #232323; }
-  .summary-table tr:hover { background-color: #303030; }
+tr:nth-child(even), .summary-table tr:nth-child(even) {
+  background-color: #fafafa;
+}
+tr:hover, .summary-table tr:hover {
+  background-color: #eef3ff;
 }
 
+/* 🌙 다크모드 (표는 그대로 하얀색, 글씨만 흰색) */
+@media (prefers-color-scheme: dark) {
+  table, .summary-table {
+    background-color: white !important; /* ✅ 다크모드에서도 하얀 표 */
+    border-color: #555;
+  }
+  th, td, .summary-table th, .summary-table td {
+    color: white !important; /* ✅ 글씨는 하얀색 */
+  }
+  tr:nth-child(even), .summary-table tr:nth-child(even) {
+    background-color: #2a2a2a !important;
+  }
+  tr:hover, .summary-table tr:hover {
+    background-color: #3a3a3a !important;
+  }
+}
 </style>
 """, unsafe_allow_html=True)
+
 
 # ----------------------------------------
 # HEADER
@@ -311,4 +278,5 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.markdown(mon_sum.to_html(index=False, classes='summary-table'), unsafe_allow_html=True)
+
 
