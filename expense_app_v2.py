@@ -19,19 +19,20 @@ table_css = """
 <style>
 body {
     font-family: 'Segoe UI', sans-serif;
-    color: #222;
-    background-color: #ffffff;
+    color: inherit; /* ✅ 시스템 테마 따라감 */
+    background-color: transparent; /* ✅ 시스템 배경 유지 */
 }
 
-/* 표 기본 설정 */
+/* ✅ 테이블은 항상 화이트 카드형 */
 table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
     font-size: 14px;
-    border-radius: 8px;
+    border-radius: 10px;
     overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    background-color: #ffffff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
 /* 헤더 스타일 */
@@ -40,10 +41,11 @@ thead {
     color: white;
 }
 
-/* 본문 행 기본 배경 */
-tbody tr {
-    background-color: #ffffff;  /* ✅ 기본 흰색 고정 */
-    color: #222;
+/* 기본 셀 */
+th, td {
+    text-align: left;
+    padding: 10px 14px;
+    color: #222; /* ✅ 항상 선명한 글씨 */
 }
 
 /* 짝수행 */
@@ -51,19 +53,13 @@ tbody tr:nth-child(even) {
     background-color: #f8f9fa;
 }
 
-/* hover 효과 */
+/* hover 강조 */
 tbody tr:hover {
-    background-color: #e9f3ff;
+    background-color: #eef4ff;
     transition: 0.2s;
 }
 
-/* 셀 내부 */
-th, td {
-    text-align: left;
-    padding: 10px 14px;
-}
-
-/* 링크 및 버튼 */
+/* 링크 버튼 */
 a.receipt-btn {
     color: #007bff;
     text-decoration: none;
@@ -76,14 +72,16 @@ a.receipt-btn:hover {
 /* 액션 아이콘 */
 .action-icons {
     font-size: 16px;
+    color: #2b5876;
 }
 
-/* Streamlit 다크모드 대비 */
-html[data-theme="dark"] body,
-html[data-theme="dark"] table,
-html[data-theme="dark"] tr {
+/* Streamlit 다크모드 강제 표색 고정 */
+html[data-theme="dark"] table {
     background-color: #ffffff !important;
-    color: #111 !important;
+}
+html[data-theme="dark"] th,
+html[data-theme="dark"] td {
+    color: #222 !important;
 }
 </style>
 """
@@ -253,4 +251,5 @@ if os.path.exists(excel_file):
         st.dataframe(view_df.groupby("Month")["Amount"].sum().reset_index(), use_container_width=True)
 else:
     st.info("No records yet.")
+
 
