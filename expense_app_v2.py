@@ -68,7 +68,7 @@ tr:hover, .summary-table tr:hover {
     border-color: #555;
   }
   th, td, .summary-table th, .summary-table td {
-    color: white !important; /* ✅ 글씨는 하얀색 */
+    color: black !important; /* ✅ 글씨는 하얀색 */
   }
   tr:nth-child(even), .summary-table tr:nth-child(even) {
     background-color: #2a2a2a !important;
@@ -278,5 +278,6 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.markdown(mon_sum.to_html(index=False, classes='summary-table'), unsafe_allow_html=True)
+
 
 
