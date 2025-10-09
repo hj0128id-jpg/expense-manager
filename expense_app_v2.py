@@ -77,7 +77,7 @@ if st.button("💾 Save"):
     st.success("✅ Data saved successfully!")
 
 # ----------------------------------------
-# Display Data + Summary + Edit/Delete
+# Display Data + Edit/Delete + Summary
 # ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
@@ -85,15 +85,18 @@ if os.path.exists(excel_file):
 
     # AgGrid 설정
     gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_column("Date", editable=True)
+    gb.configure_column("Category", editable=True)
+    gb.configure_columns(["Description","Vendor","Amount","Receipt"], editable=False)
     gb.configure_selection("single")
     grid_options = gb.build()
 
     grid_response = AgGrid(
         df,
         gridOptions=grid_options,
-        height=300,
+        height=350,
         width="100%",
-        update_mode=GridUpdateMode.SELECTION_CHANGED,
+        update_mode=GridUpdateMode.MODEL_CHANGED,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED
     )
 
@@ -108,18 +111,12 @@ if os.path.exists(excel_file):
         edit_date = st.date_input("Date", pd.to_datetime(row["Date"]))
         edit_category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
                                      index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]))
-        edit_description = st.text_input("Description", row["Description"])
-        edit_vendor = st.text_input("Vendor", row["Vendor"])
-        edit_amount = st.number_input("Amount", value=int(row["Amount"]))
 
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Update Selected"):
                 df.loc[idx, "Date"] = edit_date
                 df.loc[idx, "Category"] = edit_category
-                df.loc[idx, "Description"] = edit_description
-                df.loc[idx, "Vendor"] = edit_vendor
-                df.loc[idx, "Amount"] = edit_amount
                 df.to_excel(excel_file, index=False)
                 st.success("✅ Record updated!")
         with col2:
@@ -156,4 +153,3 @@ if os.path.exists(excel_file):
 
 else:
     st.info("No data saved yet.")
-
