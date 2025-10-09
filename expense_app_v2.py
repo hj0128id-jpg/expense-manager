@@ -98,7 +98,7 @@ if os.path.exists(excel_file):
     )
 
     selected = grid_response['selected_rows']
-    if selected:
+    if selected and len(selected) > 0:
         idx = int(selected[0]['_selectedRowNodeInfo']['nodeId'])
         row = df.loc[idx]
 
@@ -156,3 +156,4 @@ if os.path.exists(excel_file):
 
 else:
     st.info("No data saved yet.")
+
