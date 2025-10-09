@@ -148,19 +148,9 @@ if os.path.exists(excel_file):
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-    # ✅ 정렬 토글 버튼
-    sort_col1, sort_col2 = st.columns([4, 1])
-    with sort_col1:
-        st.subheader("📋 Saved Records")
-    with sort_col2:
-        if st.button("⬆️ Ascending" if st.session_state.sort_order == "desc" else "⬇️ Descending"):
-            st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
-            st.rerun()
+    st.subheader("📋 Saved Records")
 
-    ascending_flag = True if st.session_state.sort_order == "asc" else False
-    df = df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
-
-    # ✅ Download
+    # ✅ Download Excel
     months = sorted(df["Month"].unique(), reverse=True)
     with st.popover("📥 Download Excel"):
         sel = st.selectbox("Select month", months)
@@ -192,13 +182,27 @@ if os.path.exists(excel_file):
     if reset:
         view_df = df.copy()
 
-    st.markdown("### 💾 Expense Records")
-
-    # ✅ Header
-    header_cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
+    # ✅ Header (Date에 정렬버튼 포함)
+    col_header = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
     headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Action"]
     for i, h in enumerate(headers):
-        header_cols[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
+        if h == "Date":
+            with col_header[i]:
+                btn_label = "⬆️" if st.session_state.sort_order == "desc" else "⬇️"
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
+                with c2:
+                    if st.button(btn_label, key="sort_toggle"):
+                        st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
+                        st.rerun()
+        else:
+            col_header[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
+
+    # ✅ 정렬 적용
+    ascending_flag = True if st.session_state.sort_order == "asc" else False
+    df = df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
+    view_df = df if view_df.empty else view_df
 
     # ✅ Rows
     for idx, row in view_df.iterrows():
