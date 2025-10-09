@@ -38,6 +38,20 @@ with col3:
 
 description = st.text_input("Description")
 vendor = st.text_input("Vendor")
+receipt_file = st.file_uploader("Upload Receipt", type=["png","jpg","jpeg","pdf"])
+
+receipt_name = None
+if receipt_file is not None:
+    receipt_bytes = receipt_file.read()
+    receipt_name = receipt_file.name
+    if not os.path.exists("receipts"):
+        os.makedirs("receipts")
+    with open(f"receipts/{receipt_name}", "wb") as f:
+        f.write(receipt_bytes)
+    if receipt_file.type.startswith("image"):
+        st.image(receipt_bytes, width=200)
+    else:
+        st.write(f"Uploaded: {receipt_name}")
 
 # ----------------------------------------
 # Save Button
@@ -48,10 +62,10 @@ if st.button("💾 Save"):
         "Category": [category],
         "Description": [description],
         "Vendor": [vendor],
-        "Amount": [amount]
+        "Amount": [amount],
+        "Receipt": [receipt_name]
     })
 
-    # Load previous data if exists
     if os.path.exists(excel_file):
         old_data = pd.read_excel(excel_file)
         df = pd.concat([old_data, new_data], ignore_index=True)
@@ -62,12 +76,43 @@ if st.button("💾 Save"):
     st.success("✅ Data saved successfully!")
 
 # ----------------------------------------
-# Display Data + Summary + Download
+# Display Data + Summary + Edit/Delete
 # ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
     st.subheader("📋 Saved Records")
     st.dataframe(df, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("✏️ Edit / Delete Records")
+
+    if not df.empty:
+        selected_index = st.selectbox("Select Record to Edit/Delete", df.index)
+
+        # Display current values
+        edit_date = st.date_input("Date", pd.to_datetime(df.loc[selected_index, "Date"]))
+        edit_category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
+                                     index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(df.loc[selected_index, "Category"]))
+        edit_description = st.text_input("Description", df.loc[selected_index, "Description"])
+        edit_vendor = st.text_input("Vendor", df.loc[selected_index, "Vendor"])
+        edit_amount = st.number_input("Amount", value=int(df.loc[selected_index, "Amount"]))
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Update"):
+                df.loc[selected_index, "Date"] = edit_date
+                df.loc[selected_index, "Category"] = edit_category
+                df.loc[selected_index, "Description"] = edit_description
+                df.loc[selected_index, "Vendor"] = edit_vendor
+                df.loc[selected_index, "Amount"] = edit_amount
+                df.to_excel(excel_file, index=False)
+                st.success("✅ Record updated!")
+
+        with col2:
+            if st.button("Delete"):
+                df = df.drop(selected_index)
+                df.to_excel(excel_file, index=False)
+                st.success("✅ Record deleted!")
 
     # Summary Section
     st.markdown("---")
