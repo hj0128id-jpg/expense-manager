@@ -59,4 +59,6 @@ st.markdown("---")
 # ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
-if not
+if not os.path.exists(receipt_folder):
+    os.makedirs(receipt_folder)
+
