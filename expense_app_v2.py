@@ -35,6 +35,14 @@ st.markdown("""
 .dataframe tbody tr:hover {
     background-color: #eef4ff !important;
 }
+.header-cell {
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(90deg, #2b5876, #4e4376);
+    padding: 8px 10px;
+    border-radius: 6px 6px 0 0;
+    text-align: left;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -49,7 +57,7 @@ st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System<
 st.markdown("---")
 
 # ----------------------------------------
-# PATHS
+# FILE PATHS
 # ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
@@ -147,7 +155,13 @@ if os.path.exists(excel_file):
 
     st.markdown("### 💾 Expense Records")
 
-    # render records manually (Streamlit-native)
+    # ✅ 헤더 줄 추가
+    header_cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
+    headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]
+    for i, h in enumerate(headers):
+        header_cols[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
+
+    # ✅ 데이터 줄 렌더링
     for idx, row in view_df.iterrows():
         cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
         cols[0].write(row["Date"].strftime("%Y-%m-%d"))
@@ -163,7 +177,7 @@ if os.path.exists(excel_file):
             else:
                 st.write("-")
 
-    # Show modal when user clicked "View"
+    # ✅ 팝업
     if st.session_state.view_receipt:
         with st.modal("🧾 Receipt Preview"):
             path = st.session_state.view_receipt
@@ -175,9 +189,7 @@ if os.path.exists(excel_file):
                 st.session_state.view_receipt = None
                 st.rerun()
 
-    # ----------------------------------------
-    # SUMMARY SECTION
-    # ----------------------------------------
+    # ✅ Summary
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
     c1, c2 = st.columns(2)
@@ -187,5 +199,6 @@ if os.path.exists(excel_file):
     with c2:
         mon_sum = view_df.groupby("Month")["Amount"].sum().reset_index()
         st.dataframe(mon_sum, use_container_width=True)
+
 else:
     st.info("No records yet.")
