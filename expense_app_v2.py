@@ -16,6 +16,8 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # ----------------------------------------
 if "view_receipt" not in st.session_state:
     st.session_state.view_receipt = None
+if "edit_index" not in st.session_state:
+    st.session_state.edit_index = None
 
 # ----------------------------------------
 # STYLES
@@ -42,6 +44,14 @@ st.markdown("""
     padding: 8px 10px;
     border-radius: 6px 6px 0 0;
     text-align: left;
+}
+.action-btn {
+    font-size: 16px;
+    cursor: pointer;
+    margin-right: 5px;
+}
+.action-btn:hover {
+    opacity: 0.7;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -71,24 +81,15 @@ with col1:
     date = st.date_input("Date", datetime.today())
 with col2:
     category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"])
-
-# ✅ Amount 입력란에 쉼표 표시
 with col3:
     amount_str = st.text_input("Amount (Rp)", value="", placeholder="e.g. 1,000,000")
     if amount_str:
         clean_amount = amount_str.replace(",", "").strip()
-        if clean_amount.isdigit():
-            formatted_amount = f"{int(clean_amount):,}"
-            amount = int(clean_amount)
-        else:
-            st.warning("Please enter a valid number.")
-            amount = 0
+        amount = int(clean_amount) if clean_amount.isdigit() else 0
+        formatted_amount = f"{amount:,}" if amount else ""
     else:
-        formatted_amount = ""
         amount = 0
-    # 자동 쉼표 표시 갱신
-    if formatted_amount and formatted_amount != amount_str:
-        st.session_state["amount_input"] = formatted_amount
+        formatted_amount = ""
 
 description = st.text_input("Description")
 vendor = st.text_input("Vendor")
@@ -114,13 +115,11 @@ if st.button("💾 Save Record"):
         "Amount": [amount],
         "Receipt": [receipt_name]
     })
-
     if os.path.exists(excel_file):
         old = pd.read_excel(excel_file)
         df = pd.concat([old, new], ignore_index=True)
     else:
         df = new
-
     df.to_excel(excel_file, index=False)
     st.success("✅ Record saved successfully!")
     time.sleep(0.5)
@@ -171,15 +170,15 @@ if os.path.exists(excel_file):
 
     st.markdown("### 💾 Expense Records")
 
-    # ✅ Header
-    header_cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
-    headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]
+    # Header
+    header_cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
+    headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Action"]
     for i, h in enumerate(headers):
         header_cols[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
 
-    # ✅ Records
+    # Rows
     for idx, row in view_df.iterrows():
-        cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
+        cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
         cols[0].write(row["Date"].strftime("%Y-%m-%d"))
         cols[1].write(row["Category"])
         cols[2].write(row["Description"])
@@ -193,7 +192,48 @@ if os.path.exists(excel_file):
             else:
                 st.write("-")
 
-    # ✅ Receipt Modal
+        # ✅ Edit / Delete Buttons
+        with cols[6]:
+            edit_col, del_col = st.columns(2)
+            with edit_col:
+                if st.button("✏️", key=f"edit_{idx}"):
+                    st.session_state.edit_index = idx
+                    st.session_state.view_receipt = None
+                    st.rerun()
+            with del_col:
+                if st.button("🗑️", key=f"del_{idx}"):
+                    df = df.drop(idx).reset_index(drop=True)
+                    df.to_excel(excel_file, index=False)
+                    st.success("🗑️ Record deleted!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+    # ✅ Edit modal
+    if st.session_state.edit_index is not None:
+        row = view_df.iloc[st.session_state.edit_index]
+        with st.modal("✏️ Edit Record"):
+            edit_date = st.date_input("Date", value=row["Date"])
+            edit_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"], index=["Transportation","Meals","Entertainment","Office","Office Supply","ETC"].index(row["Category"]))
+            edit_desc = st.text_input("Description", value=row["Description"])
+            edit_vendor = st.text_input("Vendor", value=row["Vendor"])
+            edit_amount = st.text_input("Amount (Rp)", value=f"{int(row['Amount']):,}")
+            if st.button("Save Changes"):
+                new_amount = int(edit_amount.replace(",", ""))
+                df.loc[row.name, "Date"] = edit_date
+                df.loc[row.name, "Category"] = edit_cat
+                df.loc[row.name, "Description"] = edit_desc
+                df.loc[row.name, "Vendor"] = edit_vendor
+                df.loc[row.name, "Amount"] = new_amount
+                df.to_excel(excel_file, index=False)
+                st.success("✅ Updated successfully!")
+                st.session_state.edit_index = None
+                time.sleep(0.5)
+                st.rerun()
+            if st.button("Cancel"):
+                st.session_state.edit_index = None
+                st.rerun()
+
+    # ✅ View modal
     if st.session_state.view_receipt:
         with st.modal("🧾 Receipt Preview"):
             path = st.session_state.view_receipt
@@ -209,19 +249,17 @@ if os.path.exists(excel_file):
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
 
-    # Category summary
     cat_sum = view_df.groupby("Category")["Amount"].sum().reset_index()
     cat_sum["Amount"] = cat_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
-    # Month summary
     mon_sum = view_df.groupby("Month")["Amount"].sum().reset_index()
     mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         st.write("**By Category**")
         st.table(cat_sum)
-    with col2:
+    with c2:
         st.write("**By Month**")
         st.table(mon_sum)
 
