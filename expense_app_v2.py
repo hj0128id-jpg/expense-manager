@@ -1,90 +1,136 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
 from PIL import Image
+from datetime import datetime
+from io import BytesIO
 
-st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
+# ----------------------------------------
+# Basic Config
+# ----------------------------------------
+st.set_page_config(page_title="Expense Manager", layout="wide")
 
-# ---------------- 헤더바 ----------------
-col1, col2 = st.columns([1, 4])
-with col1:
-    logo_path = "unnamed.png"  # 로고 파일명 (같은 폴더에 두세요)
-    if os.path.exists(logo_path):
-        logo = Image.open(logo_path)
-        st.image(logo, width=180)
-with col2:
-    st.markdown(
-        """
-        <div style='text-align:right; padding-top:25px;'>
-            <h2 style='margin:0; color:#004C92;'>DUCK SAN EXPENSE MANAGER</h2>
-            <p style='margin:0; color:gray;'>지출결의서 관리 시스템</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.divider()
-
-# ---------------- 기본 설정 ----------------
-st.subheader("🧾 지출 입력")
-
-month_now = datetime.today().strftime("%Y-%m")
-FILE_PATH = f"expenses_{month_now}.xlsx"
-
-if os.path.exists(FILE_PATH):
-    df = pd.read_excel(FILE_PATH)
+# Company Logo
+if os.path.exists("unnamed.png"):
+    logo = Image.open("unnamed.png")
+    st.image(logo, width=280)
 else:
-    df = pd.DataFrame(columns=["날짜", "카테고리", "내용", "거래처", "결제방법", "금액", "영수증"])
+    st.warning("⚠️ Please upload your logo file (unnamed.png) in the same folder.")
 
-# ---------------- 입력 폼 ----------------
-with st.form("expense_form", clear_on_submit=True):
+st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
+st.markdown("---")
+
+# ----------------------------------------
+# Input Section
+# ----------------------------------------
+excel_file = "expenses.xlsx"
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    date = st.date_input("Date", datetime.today())
+with col2:
+    category = st.selectbox(
+        "Category",
+        ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
+    )
+with col3:
+    amount = st.number_input("Amount (Rp)", min_value=0, step=1000)
+
+description = st.text_input("Description")
+vendor = st.text_input("Vendor")
+
+# ----------------------------------------
+# Save Button
+# ----------------------------------------
+if st.button("💾 Save"):
+    new_data = pd.DataFrame({
+        "Date": [date],
+        "Category": [category],
+        "Description": [description],
+        "Vendor": [vendor],
+        "Amount": [amount]
+    })
+
+    # Load previous data if exists
+    if os.path.exists(excel_file):
+        old_data = pd.read_excel(excel_file)
+        df = pd.concat([old_data, new_data], ignore_index=True)
+    else:
+        df = new_data
+
+    df.to_excel(excel_file, index=False)
+    st.success("✅ Data saved successfully!")
+
+# ----------------------------------------
+# Display Data + Filter + Summary + Export
+# ----------------------------------------
+if os.path.exists(excel_file):
+    df = pd.read_excel(excel_file)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df["Month"] = df["Date"].dt.to_period("M").astype(str)
+
+    st.subheader("📅 Filter Records by Month")
+    month_list = sorted(df["Month"].unique(), reverse=True)
+    selected_month = st.selectbox("Select Month", ["All"] + month_list)
+
+    if selected_month != "All":
+        df_filtered = df[df["Month"] == selected_month]
+    else:
+        df_filtered = df
+
+    st.subheader("📋 Records")
+    st.dataframe(df_filtered, use_container_width=True)
+
+    # Summary Section
+    st.markdown("---")
+    st.subheader("📊 Summary")
+
     col1, col2 = st.columns(2)
     with col1:
-        date = st.date_input("날짜", datetime.today())
-        category = st.selectbox("카테고리", ["식대", "교통비", "사무용품", "접대비", "기타"])
-        payment = st.selectbox("결제방법", ["법인카드", "현금", "계좌이체", "기타"])
+        cat_summary = df_filtered.groupby("Category")["Amount"].sum().reset_index()
+        st.write("**Total by Category**")
+        st.dataframe(cat_summary)
+
     with col2:
-        description = st.text_input("내용", placeholder="예: 회식비, 출장비 등")
-        vendor = st.text_input("거래처", placeholder="예: 식당 A, 택시 등")
-        amount = st.number_input("금액", min_value=0, step=1000)
-    receipt = st.file_uploader("영수증 파일 업로드 (선택)", type=["jpg", "jpeg", "png", "pdf"])
+        month_summary = df.groupby("Month")["Amount"].sum().reset_index()
+        st.write("**Total by Month (All)**")
+        st.dataframe(month_summary)
 
-    submitted = st.form_submit_button("💾 저장")
+    # Excel Download (raw data)
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Expenses")
+    st.download_button(
+        label="📥 Download All Data (Excel)",
+        data=buffer,
+        file_name="DuckSan_Expenses_All.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-    if submitted:
-        new_data = {
-            "날짜": date,
-            "카테고리": category,
-            "내용": description,
-            "거래처": vendor,
-            "결제방법": payment,
-            "금액": amount,
-            "영수증": receipt.name if receipt else ""
-        }
+    # ----------------------------------------
+    # Generate Expense Report (Formal Style)
+    # ----------------------------------------
+    st.markdown("---")
+    st.subheader("📄 Generate Expense Report (Formal Format)")
 
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-        df.to_excel(FILE_PATH, index=False)
-        st.success(f"✅ 저장 완료! ({FILE_PATH})")
+    if st.button("📘 Export Expense Form (Filtered Month)"):
+        if selected_month == "All":
+            st.warning("⚠️ Please select a specific month to export.")
+        else:
+            report_buffer = BytesIO()
+            with pd.ExcelWriter(report_buffer, engine="openpyxl") as writer:
+                df_filtered.to_excel(writer, index=False, sheet_name="Expense Report")
 
-st.divider()
-st.subheader("📊 지출 내역 보기")
+                # Summary Sheet
+                summary = df_filtered.groupby("Category")["Amount"].sum().reset_index()
+                summary.to_excel(writer, index=False, sheet_name="Summary")
 
-# ---------------- 필터 ----------------
-col1, col2 = st.columns(2)
-with col1:
-    category_filter = st.selectbox("카테고리 필터", ["전체"] + list(df["카테고리"].unique()))
-with col2:
-    month_filter = st.selectbox("월별 필터", ["전체"] + sorted(df["날짜"].astype(str).str[:7].unique()))
+            st.download_button(
+                label="⬇️ Download Expense Report (Excel Form)",
+                data=report_buffer,
+                file_name=f"DuckSan_Expense_Report_{selected_month}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-filtered_df = df.copy()
-if category_filter != "전체":
-    filtered_df = filtered_df[filtered_df["카테고리"] == category_filter]
-if month_filter != "전체":
-    filtered_df = filtered_df[filtered_df["날짜"].astype(str).str.startswith(month_filter)]
-
-# ---------------- 합계 + 데이터 표시 ----------------
-total = filtered_df["금액"].sum()
-st.metric("💰 총 지출 합계", f"{total:,.0f} 원")
-
-st.dataframe(filtered_df, use_container_width=True)
+else:
+    st.info("No data saved yet.")
