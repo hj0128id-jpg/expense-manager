@@ -144,14 +144,20 @@ if st.button("💾 Save Record"):
 # DISPLAY SECTION
 # ----------------------------------------
 if os.path.exists(excel_file):
+    # load and normalize
     df = pd.read_excel(excel_file)
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-    st.subheader("📋 Saved Records")
+    # --- apply sorting first (IMPORTANT) ---
+    ascending_flag = True if st.session_state.sort_order == "asc" else False
+    df = df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
 
-    # ✅ Download Excel
+    # months for download and filters (from sorted df)
     months = sorted(df["Month"].unique(), reverse=True)
+
+    # Header and Download
+    st.subheader("📋 Saved Records")
     with st.popover("📥 Download Excel"):
         sel = st.selectbox("Select month", months)
         filtered = df[df["Month"] == sel]
@@ -165,7 +171,7 @@ if os.path.exists(excel_file):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    # ✅ Filters
+    # Filters (user picks)
     f1, f2, f3 = st.columns([1.5, 1.5, 1])
     with f1:
         month_filter = st.selectbox("📅 Filter by Month", ["All"] + months)
@@ -174,6 +180,7 @@ if os.path.exists(excel_file):
     with f3:
         reset = st.button("🔄 Reset Filters")
 
+    # --- apply filters AFTER sorting ---
     view_df = df.copy()
     if month_filter != "All":
         view_df = view_df[view_df["Month"] == month_filter]
@@ -182,7 +189,7 @@ if os.path.exists(excel_file):
     if reset:
         view_df = df.copy()
 
-    # ✅ Header (Date에 정렬버튼 포함)
+    # Header row with Date sort toggle embedded
     col_header = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
     headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Action"]
     for i, h in enumerate(headers):
@@ -193,18 +200,14 @@ if os.path.exists(excel_file):
                 with c1:
                     st.markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
                 with c2:
+                    # toggle sort order when pressed
                     if st.button(btn_label, key="sort_toggle"):
                         st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
                         st.rerun()
         else:
             col_header[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
 
-    # ✅ 정렬 적용
-    ascending_flag = True if st.session_state.sort_order == "asc" else False
-    df = df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
-    view_df = df if view_df.empty else view_df
-
-    # ✅ Rows
+    # Rows (render based on view_df which already reflects sorting + filters)
     for idx, row in view_df.iterrows():
         with st.container():
             cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
@@ -231,13 +234,23 @@ if os.path.exists(excel_file):
                         st.rerun()
                 with e2:
                     if st.button("🗑️", key=f"del_{idx}"):
-                        df = df.drop(idx).reset_index(drop=True)
+                        # delete from original df (by index in df)
+                        # find the corresponding original index to remove
+                        # row.name corresponds to index in view_df, so we map via unique identifier (Date+Amount+Description+Vendor)
+                        # simpler: drop by matching all fields (safe for this small tool)
+                        mask = (
+                            (df["Date"] == row["Date"]) &
+                            (df["Amount"] == row["Amount"]) &
+                            (df["Description"] == row["Description"]) &
+                            (df["Vendor"] == row["Vendor"])
+                        )
+                        df = df[~mask].reset_index(drop=True)
                         df.to_excel(excel_file, index=False)
                         st.success("🗑️ Record deleted!")
                         time.sleep(0.5)
                         st.rerun()
 
-            # ✅ View (Expand)
+            # View (expanded)
             if st.session_state.view_index == idx:
                 with st.expander("🧾 Receipt Preview", expanded=True):
                     file_path = os.path.join(receipt_folder, str(row["Receipt"]))
@@ -252,7 +265,7 @@ if os.path.exists(excel_file):
                         st.session_state.view_index = None
                         st.rerun()
 
-            # ✅ Edit (Expand)
+            # Edit (expanded)
             if st.session_state.edit_index == idx:
                 with st.expander("✏️ Edit Record", expanded=True):
                     edit_date = st.date_input("Date", value=row["Date"], key=f"edit_date_{idx}")
@@ -270,11 +283,18 @@ if os.path.exists(excel_file):
                     with c1:
                         if st.button("💾 Save Changes", key=f"save_edit_{idx}"):
                             new_amount = int(edit_amount.replace(",", "")) if edit_amount.replace(",", "").isdigit() else 0
-                            df.loc[row.name, "Date"] = edit_date
-                            df.loc[row.name, "Category"] = edit_cat
-                            df.loc[row.name, "Description"] = edit_desc
-                            df.loc[row.name, "Vendor"] = edit_vendor
-                            df.loc[row.name, "Amount"] = new_amount
+                            # update the original df (find matching row)
+                            mask_upd = (
+                                (df["Date"] == row["Date"]) &
+                                (df["Amount"] == row["Amount"]) &
+                                (df["Description"] == row["Description"]) &
+                                (df["Vendor"] == row["Vendor"])
+                            )
+                            df.loc[mask_upd, "Date"] = edit_date
+                            df.loc[mask_upd, "Category"] = edit_cat
+                            df.loc[mask_upd, "Description"] = edit_desc
+                            df.loc[mask_upd, "Vendor"] = edit_vendor
+                            df.loc[mask_upd, "Amount"] = new_amount
                             df.to_excel(excel_file, index=False)
                             st.success("✅ Updated successfully!")
                             st.session_state.edit_index = None
@@ -285,7 +305,7 @@ if os.path.exists(excel_file):
                             st.session_state.edit_index = None
                             st.rerun()
 
-    # ✅ Summary Section
+    # Summary Section (filtered view_df used)
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
 
