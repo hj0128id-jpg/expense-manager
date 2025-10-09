@@ -71,8 +71,24 @@ with col1:
     date = st.date_input("Date", datetime.today())
 with col2:
     category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"])
+
+# ✅ Amount 입력란에 쉼표 표시
 with col3:
-    amount = st.number_input("Amount (Rp)", min_value=0, step=1000)
+    amount_str = st.text_input("Amount (Rp)", value="", placeholder="e.g. 1,000,000")
+    if amount_str:
+        clean_amount = amount_str.replace(",", "").strip()
+        if clean_amount.isdigit():
+            formatted_amount = f"{int(clean_amount):,}"
+            amount = int(clean_amount)
+        else:
+            st.warning("Please enter a valid number.")
+            amount = 0
+    else:
+        formatted_amount = ""
+        amount = 0
+    # 자동 쉼표 표시 갱신
+    if formatted_amount and formatted_amount != amount_str:
+        st.session_state["amount_input"] = formatted_amount
 
 description = st.text_input("Description")
 vendor = st.text_input("Vendor")
@@ -155,13 +171,13 @@ if os.path.exists(excel_file):
 
     st.markdown("### 💾 Expense Records")
 
-    # ✅ 헤더 줄 추가
+    # ✅ Header
     header_cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
     headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]
     for i, h in enumerate(headers):
         header_cols[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
 
-    # ✅ 데이터 줄 렌더링
+    # ✅ Records
     for idx, row in view_df.iterrows():
         cols = st.columns([1.1, 1.2, 2, 1.3, 1, 0.8])
         cols[0].write(row["Date"].strftime("%Y-%m-%d"))
@@ -177,7 +193,7 @@ if os.path.exists(excel_file):
             else:
                 st.write("-")
 
-    # ✅ 팝업
+    # ✅ Receipt Modal
     if st.session_state.view_receipt:
         with st.modal("🧾 Receipt Preview"):
             path = st.session_state.view_receipt
@@ -192,13 +208,22 @@ if os.path.exists(excel_file):
     # ✅ Summary
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
-    c1, c2 = st.columns(2)
-    with c1:
-        cat_sum = view_df.groupby("Category")["Amount"].sum().reset_index()
-        st.dataframe(cat_sum, use_container_width=True)
-    with c2:
-        mon_sum = view_df.groupby("Month")["Amount"].sum().reset_index()
-        st.dataframe(mon_sum, use_container_width=True)
+
+    # Category summary
+    cat_sum = view_df.groupby("Category")["Amount"].sum().reset_index()
+    cat_sum["Amount"] = cat_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
+
+    # Month summary
+    mon_sum = view_df.groupby("Month")["Amount"].sum().reset_index()
+    mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**By Category**")
+        st.table(cat_sum)
+    with col2:
+        st.write("**By Month**")
+        st.table(mon_sum)
 
 else:
     st.info("No records yet.")
