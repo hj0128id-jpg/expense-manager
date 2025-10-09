@@ -195,20 +195,20 @@ if os.path.exists(excel_file):
                     time.sleep(0.5)
                     st.rerun()
 
-        # View (expand)
-        if st.session_state.view_index == idx:
-            with st.expander("🧾 Receipt Preview", expanded=True):
-                file_path = os.path.join(receipt_folder, str(row["Receipt"]))
-                if os.path.exists(file_path):
-                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                        st.image(file_path, use_container_width=True)
-                    elif file_path.lower().endswith(".pdf"):
-                        st.markdown(f"📄 [Open PDF Receipt]({file_path})")
-                else:
-                    st.warning("⚠️ File not found.")
-                if st.button("Close Preview", key=f"close_view_{idx}"):
-                    st.session_state.view_index = None
-                    st.rerun()
+    # View (expand)
+if st.session_state.view_index == idx:
+    with st.expander("🧾 Receipt Preview", expanded=True):
+        file_path = os.path.join(receipt_folder, str(row["Receipt"]))
+        if os.path.exists(file_path):
+            if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+                st.image(file_path, width=600)  # ✅ 이미지 크기 조정
+            elif file_path.lower().endswith(".pdf"):
+                st.markdown(f"📄 [Open PDF Receipt]({file_path})")
+        else:
+            st.warning("⚠️ File not found.")
+        if st.button("Close Preview", key=f"close_view_{idx}"):
+            st.session_state.view_index = None
+            st.rerun()
 
         # Edit (expand)
         if st.session_state.edit_index == idx:
@@ -263,3 +263,4 @@ if os.path.exists(excel_file):
 
 else:
     st.info("No records yet.")
+
