@@ -16,7 +16,7 @@ st.markdown("""
     <style>
     .record-row {
         display: grid;
-        grid-template-columns: 140px 160px 250px 160px 120px 100px;
+        grid-template-columns: 140px 160px 250px 160px 120px 150px;
         padding: 6px 0;
         border-bottom: 1px solid #ccc;
         align-items: center;
@@ -26,18 +26,13 @@ st.markdown("""
     }
     .record-header {
         display: grid;
-        grid-template-columns: 140px 160px 250px 160px 120px 100px;
+        grid-template-columns: 140px 160px 250px 160px 120px 150px;
         font-weight: bold;
         background-color: #2b5876;
         color: white;
         padding: 8px 0;
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
-    }
-    .filter-box {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -111,7 +106,7 @@ if st.button("💾 Save"):
     st.success("✅ Data saved successfully!")
 
 # ----------------------------------------
-# DISPLAY TABLE + FILTER
+# DISPLAY + EDIT / DELETE
 # ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
@@ -120,7 +115,7 @@ if os.path.exists(excel_file):
 
     st.subheader("📋 Saved Records")
 
-    # --- Filter Section ---
+    # --- Filters ---
     f1, f2, f3 = st.columns([1.5, 1.5, 1])
     with f1:
         month_filter = st.selectbox("📅 Filter by Month", ["All"] + sorted(df["Month"].unique(), reverse=True))
@@ -140,12 +135,12 @@ if os.path.exists(excel_file):
     # --- Table Header ---
     st.markdown(
         "<div class='record-header'>"
-        "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Receipt</div>"
+        "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Action</div>"
         "</div>",
         unsafe_allow_html=True
     )
 
-    # --- Table Rows ---
+    # --- Editable Rows ---
     for idx, row in filtered_df.iterrows():
         st.markdown("<div class='record-row'>", unsafe_allow_html=True)
         cols = st.columns([1.4, 1.4, 2.2, 1.3, 1, 0.8])
@@ -155,19 +150,40 @@ if os.path.exists(excel_file):
         cols[3].write(row["Vendor"])
         cols[4].write(f"Rp {int(row['Amount']):,}")
 
-        if pd.notna(row["Receipt"]) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
-            with cols[5].expander("🔍 View"):
-                file_path = os.path.join(receipt_folder, row["Receipt"])
-                if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                    st.image(file_path, width=500)
-                elif file_path.lower().endswith(".pdf"):
-                    st.markdown(f"📄 [Open PDF Receipt]({file_path})")
-        else:
-            cols[5].write("-")
+        edit_key = f"edit_{idx}"
+        delete_key = f"delete_{idx}"
+
+        if cols[5].button("✏️ Edit", key=edit_key):
+            with st.form(f"edit_form_{idx}"):
+                st.write("**✏️ Edit Record**")
+                new_date = st.date_input("Date", row["Date"])
+                new_category = st.selectbox("Category", 
+                    ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
+                    index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"])
+                )
+                new_desc = st.text_input("Description", row["Description"])
+                new_vendor = st.text_input("Vendor", row["Vendor"])
+                new_amount = st.number_input("Amount (Rp)", value=int(row["Amount"]), step=1000)
+                submitted = st.form_submit_button("💾 Update")
+                if submitted:
+                    df.loc[row.name, "Date"] = new_date
+                    df.loc[row.name, "Category"] = new_category
+                    df.loc[row.name, "Description"] = new_desc
+                    df.loc[row.name, "Vendor"] = new_vendor
+                    df.loc[row.name, "Amount"] = new_amount
+                    df.to_excel(excel_file, index=False)
+                    st.success("✅ Record updated successfully!")
+                    st.experimental_rerun()
+
+        if cols[5].button("🗑 Delete", key=delete_key):
+            df = df.drop(row.name).reset_index(drop=True)
+            df.to_excel(excel_file, index=False)
+            st.warning(f"🗑 Record deleted: {row['Description']}")
+            st.experimental_rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ----------------------------------------
-    # SUMMARY SECTION (Filtered)
+    # SUMMARY SECTION
     # ----------------------------------------
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
