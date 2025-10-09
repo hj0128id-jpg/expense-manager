@@ -287,20 +287,49 @@ for i, row in view_df.iterrows():
 # ----------------------------------------
 # SUMMARY
 # ----------------------------------------
-st.markdown("---")
-st.subheader("📊 Summary (Filtered Data)")
-cat_sum = view_df.groupby("Category", as_index=False)["Amount"].sum()
-cat_sum["Amount"] = cat_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
-mon_sum = view_df.groupby("Month", as_index=False)["Amount"].sum()
-mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
+# ----------------------------------------
+# CLEAN SUMMARY TABLES
+# ----------------------------------------
+summary_css = """
+<style>
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 14px;
+}
+.summary-table th, .summary-table td {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  text-align: left; /* ✅ 왼쪽 정렬 */
+}
+.summary-table th {
+  background: linear-gradient(90deg, #2b5876, #4e4376);
+  color: white;
+}
+.summary-table tr:nth-child(even) { background-color: #fafafa; }
+.summary-table tr:hover { background-color: #eef3ff; }
+
+/* 🌙 다크모드 */
+@media (prefers-color-scheme: dark) {
+  .summary-table { background-color: #1e1e1e; color: #f0f0f0; }
+  .summary-table th { background: linear-gradient(90deg, #3b7dd8, #4e4376); }
+  .summary-table td { border-color: #555; }
+  .summary-table tr:nth-child(even) { background-color: #232323; }
+  .summary-table tr:hover { background-color: #303030; }
+}
+</style>
+"""
+st.markdown(summary_css, unsafe_allow_html=True)
 
 c1, c2 = st.columns(2)
 with c1:
     st.write("**By Category**")
-    st.markdown(cat_sum.to_html(index=False, border=1), unsafe_allow_html=True)
+    st.markdown(cat_sum.to_html(index=False, classes='summary-table'), unsafe_allow_html=True)
 with c2:
     st.write("**By Month**")
-    st.markdown(mon_sum.to_html(index=False, border=1), unsafe_allow_html=True)
+    st.markdown(mon_sum.to_html(index=False, classes='summary-table'), unsafe_allow_html=True)
+
 
 
 
