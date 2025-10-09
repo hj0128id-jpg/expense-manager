@@ -18,7 +18,7 @@ st.markdown("""
     <style>
     .record-row {
         display: grid;
-        grid-template-columns: 140px 160px 250px 160px 120px 100px;
+        grid-template-columns: 120px 140px 200px 140px 100px 100px 100px;
         padding: 6px 0;
         border-bottom: 1px solid #e0e0e0;
         align-items: center;
@@ -29,7 +29,7 @@ st.markdown("""
     }
     .record-header {
         display: grid;
-        grid-template-columns: 140px 160px 250px 160px 120px 100px;
+        grid-template-columns: 120px 140px 200px 140px 100px 100px 100px;
         font-weight: bold;
         background-color: #2b5876;
         color: white;
@@ -38,7 +38,7 @@ st.markdown("""
         border-top-right-radius: 6px;
     }
     .stButton>button {
-        font-size: 16px !important;
+        font-size: 15px !important;
         padding: 2px 4px !important;
         margin: 0 2px !important;
         border: none !important;
@@ -172,7 +172,7 @@ if os.path.exists(excel_file):
     # --- Table Header ---
     st.markdown(
         "<div class='record-header'>"
-        "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Action</div>"
+        "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Receipt</div><div>Action</div>"
         "</div>",
         unsafe_allow_html=True
     )
@@ -180,14 +180,27 @@ if os.path.exists(excel_file):
     # --- Editable Rows ---
     for idx, row in filtered_df.iterrows():
         st.markdown("<div class='record-row'>", unsafe_allow_html=True)
-        cols = st.columns([1.4, 1.4, 2.2, 1.3, 1, 0.8])
+        cols = st.columns([1.2, 1.4, 2.0, 1.4, 1.0, 1.0, 1.0])
         cols[0].write(row["Date"].strftime("%Y-%m-%d"))
         cols[1].write(row["Category"])
         cols[2].write(row["Description"])
         cols[3].write(row["Vendor"])
         cols[4].write(f"Rp {int(row['Amount']):,}")
 
-        with cols[5]:
+        # Receipt preview button
+        if pd.notna(row["Receipt"]) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
+            with cols[5]:
+                with st.expander("🔍 View"):
+                    file_path = os.path.join(receipt_folder, row["Receipt"])
+                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+                        st.image(file_path, width=450)
+                    elif file_path.lower().endswith(".pdf"):
+                        st.markdown(f"📄 [Open PDF]({file_path})")
+        else:
+            cols[5].write("-")
+
+        # Edit/Delete Buttons
+        with cols[6]:
             c1, c2 = st.columns(2)
             if c1.button("✏️", key=f"edit_{idx}"):
                 with st.form(f"edit_form_{idx}"):
