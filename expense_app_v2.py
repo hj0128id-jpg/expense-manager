@@ -138,4 +138,5 @@ if os.path.exists(excel_file):
                 label=f"📤 Download {sel}.xlsx",
                 data=buf.getvalue(),
                 file_name=f"DuckSan_Expense_{sel}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.shee
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
