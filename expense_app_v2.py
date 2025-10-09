@@ -18,17 +18,17 @@ st.markdown("""
 <style>
 body { font-family: 'Segoe UI', sans-serif; }
 
-/* ✅ 표 줄 강조 스타일 */
+/* ✅ 표 기본 스타일 */
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
   background-color: white;
   border-radius: 8px;
-  border: 1px solid #ccc; /* 바깥 테두리 */
+  border: 1px solid #ccc; /* 외곽선 */
 }
 th, td {
-  border: 1px solid #ccc;  /* 내부 줄 */
+  border: 1px solid #ccc; /* 내부 줄 */
   padding: 8px;
   text-align: left;
   font-size: 14px;
@@ -37,25 +37,57 @@ th, td {
 th {
   background: linear-gradient(90deg, #2b5876, #4e4376);
   color: white;
-  border-bottom: 2px solid #999; /* 헤더 하단 구분선 */
+  border-bottom: 2px solid #999;
 }
-tr:nth-child(even) {
-  background-color: #f9f9f9;  /* 줄무늬 효과 */
+tr:nth-child(even) { background-color: #fafafa; }
+tr:hover { background-color: #eef3ff; }
+
+/* ✅ Summary 영역 색상 통일 */
+[data-testid="stTable"] table {
+  background-color: white !important;
+  color: black !important;
+  border: 1px solid #ccc !important;
 }
-tr:hover {
-  background-color: #eef3ff; /* 마우스 올릴 때 색상 */
+[data-testid="stTable"] th {
+  background-color: #2b5876 !important;
+  color: white !important;
+}
+[data-testid="stTable"] td {
+  border: 1px solid #ccc !important;
 }
 
-/* 🌙 다크모드 */
+/* 🌙 다크모드 대응 */
 @media (prefers-color-scheme: dark) {
-  table { background-color: #1e1e1e; color: #fff; border-color: #555; }
-  th { background: linear-gradient(90deg, #3b7dd8, #4e4376); border-color: #666; }
-  td { border-color: #444; }
-  tr:nth-child(even) { background-color: #252525; }
-  tr:hover { background-color: #333; }
+  table {
+    background-color: #1e1e1e !important;
+    color: #f0f0f0 !important;
+    border-color: #666 !important;
+  }
+  th {
+    background: linear-gradient(90deg, #3b7dd8, #4e4376) !important;
+    border-color: #666 !important;
+  }
+  td { border-color: #555 !important; }
+  tr:nth-child(even) { background-color: #232323 !important; }
+  tr:hover { background-color: #303030 !important; }
+
+  /* ✅ Summary 박스 어둡게 통일 */
+  [data-testid="stTable"] table {
+    background-color: #1e1e1e !important;
+    color: #f0f0f0 !important;
+    border-color: #555 !important;
+  }
+  [data-testid="stTable"] th {
+    background: linear-gradient(90deg, #3b7dd8, #4e4376) !important;
+    color: #fff !important;
+  }
+  [data-testid="stTable"] td {
+    border: 1px solid #444 !important;
+  }
 }
 </style>
 """, unsafe_allow_html=True)
+
 # ✅ 표 줄 추가 CSS 블록 끝
 
 
@@ -269,4 +301,5 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.table(mon_sum)
+
 
