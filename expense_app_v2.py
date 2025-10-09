@@ -9,7 +9,11 @@ from io import BytesIO
 # ----------------------------------------
 # PAGE CONFIG
 # ----------------------------------------
-st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
+st.set_page_config(
+    page_title="Duck San Expense Manager",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # ----------------------------------------
 # STATE
@@ -18,9 +22,11 @@ if "view_index" not in st.session_state:
     st.session_state.view_index = None
 if "edit_index" not in st.session_state:
     st.session_state.edit_index = None
+if "sort_order" not in st.session_state:
+    st.session_state.sort_order = "desc"  # 기본: 최신순
 
 # ----------------------------------------
-# STYLE
+# STYLE (반응형)
 # ----------------------------------------
 st.markdown("""
 <style>
@@ -41,6 +47,28 @@ st.markdown("""
     padding: 8px 10px;
     border-radius: 6px 6px 0 0;
     text-align: left;
+}
+@media (max-width: 768px) {
+    [data-testid="column"] {
+        flex-direction: column !important;
+        width: 100% !important;
+        display: block !important;
+    }
+    .stButton > button {
+        width: 100% !important;
+        margin-bottom: 5px;
+    }
+    .header-cell {
+        font-size: 14px !important;
+        text-align: center !important;
+    }
+    img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -120,25 +148,34 @@ if os.path.exists(excel_file):
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-    left, right = st.columns([4, 1])
-    with left:
+    # ✅ 정렬 토글 버튼
+    sort_col1, sort_col2 = st.columns([4, 1])
+    with sort_col1:
         st.subheader("📋 Saved Records")
-    with right:
-        months = sorted(df["Month"].unique(), reverse=True)
-        with st.popover("📥 Download Excel"):
-            sel = st.selectbox("Select month", months)
-            filtered = df[df["Month"] == sel]
-            buf = BytesIO()
-            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                filtered.to_excel(writer, index=False, sheet_name=sel)
-            st.download_button(
-                label=f"📤 Download {sel}.xlsx",
-                data=buf.getvalue(),
-                file_name=f"DuckSan_Expense_{sel}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    with sort_col2:
+        if st.button("⬆️ Ascending" if st.session_state.sort_order == "desc" else "⬇️ Descending"):
+            st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
+            st.rerun()
 
-    # Filters
+    ascending_flag = True if st.session_state.sort_order == "asc" else False
+    df = df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
+
+    # ✅ Download
+    months = sorted(df["Month"].unique(), reverse=True)
+    with st.popover("📥 Download Excel"):
+        sel = st.selectbox("Select month", months)
+        filtered = df[df["Month"] == sel]
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            filtered.to_excel(writer, index=False, sheet_name=sel)
+        st.download_button(
+            label=f"📤 Download {sel}.xlsx",
+            data=buf.getvalue(),
+            file_name=f"DuckSan_Expense_{sel}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    # ✅ Filters
     f1, f2, f3 = st.columns([1.5, 1.5, 1])
     with f1:
         month_filter = st.selectbox("📅 Filter by Month", ["All"] + months)
@@ -157,94 +194,94 @@ if os.path.exists(excel_file):
 
     st.markdown("### 💾 Expense Records")
 
-    # Header
+    # ✅ Header
     header_cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
     headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Action"]
     for i, h in enumerate(headers):
         header_cols[i].markdown(f"<div class='header-cell'>{h}</div>", unsafe_allow_html=True)
 
-    # Rows
+    # ✅ Rows
     for idx, row in view_df.iterrows():
-        cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
-        cols[0].write(row["Date"].strftime("%Y-%m-%d"))
-        cols[1].write(row["Category"])
-        cols[2].write(row["Description"])
-        cols[3].write(row["Vendor"])
-        cols[4].write(f"Rp {int(row['Amount']):,}")
-        with cols[5]:
-            if pd.notna(row["Receipt"]):
-                if st.button("View", key=f"view_{idx}"):
-                    st.session_state.view_index = idx
-                    st.session_state.edit_index = None
-                    st.rerun()
-            else:
-                st.write("-")
-
-        with cols[6]:
-            e1, e2 = st.columns(2)
-            with e1:
-                if st.button("✏️", key=f"edit_{idx}"):
-                    st.session_state.edit_index = idx
-                    st.session_state.view_index = None
-                    st.rerun()
-            with e2:
-                if st.button("🗑️", key=f"del_{idx}"):
-                    df = df.drop(idx).reset_index(drop=True)
-                    df.to_excel(excel_file, index=False)
-                    st.success("🗑️ Record deleted!")
-                    time.sleep(0.5)
-                    st.rerun()
-
-        # ✅ View (expand)
-        if st.session_state.view_index == idx:
-            exp = st.expander("🧾 Receipt Preview", expanded=True)
-            with exp:
-                file_path = os.path.join(receipt_folder, str(row["Receipt"]))
-                if os.path.exists(file_path):
-                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                        st.image(file_path, width=600, caption="Receipt Preview")
-                    elif file_path.lower().endswith(".pdf"):
-                        st.markdown(f"📄 [Open PDF Receipt]({file_path})", unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ File not found.")
-                if st.button("Close Preview", key=f"close_view_{idx}"):
-                    st.session_state.view_index = None
-                    st.rerun()
-
-        # ✅ Edit (expand)
-        if st.session_state.edit_index == idx:
-            with st.expander("✏️ Edit Record", expanded=True):
-                edit_date = st.date_input("Date", value=row["Date"], key=f"edit_date_{idx}")
-                edit_cat = st.selectbox(
-                    "Category",
-                    ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
-                    index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]),
-                    key=f"edit_cat_{idx}"
-                )
-                edit_desc = st.text_input("Description", value=row["Description"], key=f"edit_desc_{idx}")
-                edit_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"edit_vendor_{idx}")
-                edit_amount = st.text_input("Amount (Rp)", value=f"{int(row['Amount']):,}", key=f"edit_amount_{idx}")
-
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("💾 Save Changes", key=f"save_edit_{idx}"):
-                        new_amount = int(edit_amount.replace(",", "")) if edit_amount.replace(",", "").isdigit() else 0
-                        df.loc[row.name, "Date"] = edit_date
-                        df.loc[row.name, "Category"] = edit_cat
-                        df.loc[row.name, "Description"] = edit_desc
-                        df.loc[row.name, "Vendor"] = edit_vendor
-                        df.loc[row.name, "Amount"] = new_amount
-                        df.to_excel(excel_file, index=False)
-                        st.success("✅ Updated successfully!")
+        with st.container():
+            cols = st.columns([1, 1.2, 2, 1.3, 1, 0.8, 0.6])
+            cols[0].write(row["Date"].strftime("%Y-%m-%d"))
+            cols[1].write(row["Category"])
+            cols[2].write(row["Description"])
+            cols[3].write(row["Vendor"])
+            cols[4].write(f"Rp {int(row['Amount']):,}")
+            with cols[5]:
+                if pd.notna(row["Receipt"]):
+                    if st.button("View", key=f"view_{idx}"):
+                        st.session_state.view_index = idx
                         st.session_state.edit_index = None
+                        st.rerun()
+                else:
+                    st.write("-")
+
+            with cols[6]:
+                e1, e2 = st.columns(2)
+                with e1:
+                    if st.button("✏️", key=f"edit_{idx}"):
+                        st.session_state.edit_index = idx
+                        st.session_state.view_index = None
+                        st.rerun()
+                with e2:
+                    if st.button("🗑️", key=f"del_{idx}"):
+                        df = df.drop(idx).reset_index(drop=True)
+                        df.to_excel(excel_file, index=False)
+                        st.success("🗑️ Record deleted!")
                         time.sleep(0.5)
                         st.rerun()
-                with c2:
-                    if st.button("Cancel", key=f"cancel_edit_{idx}"):
-                        st.session_state.edit_index = None
+
+            # ✅ View (Expand)
+            if st.session_state.view_index == idx:
+                with st.expander("🧾 Receipt Preview", expanded=True):
+                    file_path = os.path.join(receipt_folder, str(row["Receipt"]))
+                    if os.path.exists(file_path):
+                        if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+                            st.image(file_path, width=600, caption="Receipt Preview")
+                        elif file_path.lower().endswith(".pdf"):
+                            st.markdown(f"📄 [Open PDF Receipt]({file_path})", unsafe_allow_html=True)
+                    else:
+                        st.warning("⚠️ File not found.")
+                    if st.button("Close Preview", key=f"close_view_{idx}"):
+                        st.session_state.view_index = None
                         st.rerun()
 
-    # ✅ Summary Section (Filtered Data)
+            # ✅ Edit (Expand)
+            if st.session_state.edit_index == idx:
+                with st.expander("✏️ Edit Record", expanded=True):
+                    edit_date = st.date_input("Date", value=row["Date"], key=f"edit_date_{idx}")
+                    edit_cat = st.selectbox(
+                        "Category",
+                        ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
+                        index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]),
+                        key=f"edit_cat_{idx}"
+                    )
+                    edit_desc = st.text_input("Description", value=row["Description"], key=f"edit_desc_{idx}")
+                    edit_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"edit_vendor_{idx}")
+                    edit_amount = st.text_input("Amount (Rp)", value=f"{int(row['Amount']):,}", key=f"edit_amount_{idx}")
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("💾 Save Changes", key=f"save_edit_{idx}"):
+                            new_amount = int(edit_amount.replace(",", "")) if edit_amount.replace(",", "").isdigit() else 0
+                            df.loc[row.name, "Date"] = edit_date
+                            df.loc[row.name, "Category"] = edit_cat
+                            df.loc[row.name, "Description"] = edit_desc
+                            df.loc[row.name, "Vendor"] = edit_vendor
+                            df.loc[row.name, "Amount"] = new_amount
+                            df.to_excel(excel_file, index=False)
+                            st.success("✅ Updated successfully!")
+                            st.session_state.edit_index = None
+                            time.sleep(0.5)
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"cancel_edit_{idx}"):
+                            st.session_state.edit_index = None
+                            st.rerun()
+
+    # ✅ Summary Section
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
 
