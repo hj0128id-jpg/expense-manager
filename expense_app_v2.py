@@ -5,6 +5,7 @@ from PIL import Image
 from datetime import datetime
 import time
 from io import BytesIO
+import base64
 
 # ----------------------------------------
 # PAGE CONFIG
@@ -16,13 +17,11 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # ----------------------------------------
 st.markdown("""
     <style>
-    /* 전체 폰트와 컬러 */
     html, body, [class*="st"] {
         font-family: "Segoe UI", sans-serif;
         color: #333333;
     }
 
-    /* 표 스타일 */
     .expense-table {
         width: 100%;
         border-collapse: collapse;
@@ -76,6 +75,14 @@ st.markdown("""
     .receipt-btn:hover {
         text-decoration: underline;
     }
+
+    .modal-img {
+        display: block;
+        margin: 10px auto;
+        max-width: 90%;
+        border-radius: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -122,7 +129,7 @@ if receipt_file is not None:
     st.success(f"📎 Uploaded: {receipt_name}")
 
 # ----------------------------------------
-# SAVE
+# SAVE RECORD
 # ----------------------------------------
 if st.button("💾 Save Record"):
     new_data = pd.DataFrame({
@@ -139,6 +146,7 @@ if st.button("💾 Save Record"):
         df = pd.concat([df_old, new_data], ignore_index=True)
     else:
         df = new_data
+
     df.to_excel(excel_file, index=False)
     st.success("✅ Saved Successfully!")
     time.sleep(0.3)
@@ -196,13 +204,14 @@ if os.path.exists(excel_file):
                 <th>Date</th><th>Category</th><th>Description</th>
                 <th>Vendor</th><th>Amount</th><th>Receipt</th><th>Action</th>
             </tr>
-        </thead><tbody>
+        </thead>
+        <tbody>
     """
 
     for idx, r in view_df.iterrows():
         receipt_link = "-"
         if pd.notna(r["Receipt"]) and os.path.exists(os.path.join(receipt_folder, r["Receipt"])):
-            receipt_link = f"<button class='receipt-btn' id='r_{idx}'>View</button>"
+            receipt_link = f"<a href='?view={idx}' class='receipt-btn'>View</a>"
 
         html += f"""
         <tr>
@@ -219,6 +228,23 @@ if os.path.exists(excel_file):
     html += "</tbody></table>"
     st.markdown(html, unsafe_allow_html=True)
 
+    # --- View Popup Handler ---
+    params = st.query_params
+    if "view" in params:
+        try:
+            idx = int(params["view"])
+            record = view_df.iloc[idx]
+            file_path = os.path.join(receipt_folder, record["Receipt"])
+            if os.path.exists(file_path):
+                with st.modal("🧾 Receipt Preview", key="modal_view"):
+                    if file_path.lower().endswith((".png",".jpg",".jpeg")):
+                        st.image(file_path, use_container_width=True)
+                    elif file_path.lower().endswith(".pdf"):
+                        st.markdown(f"📄 [Open PDF Receipt]({file_path})")
+                    st.button("Close", on_click=lambda: st.query_params.clear())
+        except Exception:
+            pass
+
     # Summary
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
@@ -227,5 +253,6 @@ if os.path.exists(excel_file):
         st.dataframe(view_df.groupby("Category")["Amount"].sum().reset_index(), use_container_width=True)
     with c2:
         st.dataframe(view_df.groupby("Month")["Amount"].sum().reset_index(), use_container_width=True)
+
 else:
     st.info("No records yet.")
