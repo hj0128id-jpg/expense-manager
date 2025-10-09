@@ -4,6 +4,7 @@ import os
 from PIL import Image
 from datetime import datetime
 from io import BytesIO
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # ----------------------------------------
 # Basic Config
@@ -81,36 +82,49 @@ if st.button("💾 Save"):
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
     st.subheader("📋 Saved Records")
-    st.dataframe(df, use_container_width=True)
 
-    st.markdown("---")
-    st.subheader("✏️ Edit / Delete Records")
+    # AgGrid 설정
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_selection("single")
+    grid_options = gb.build()
 
-    if not df.empty:
-        selected_index = st.selectbox("Select Record to Edit/Delete", df.index)
+    grid_response = AgGrid(
+        df,
+        gridOptions=grid_options,
+        height=300,
+        width="100%",
+        update_mode=GridUpdateMode.SELECTION_CHANGED,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED
+    )
 
-        # Display current values
-        edit_date = st.date_input("Date", pd.to_datetime(df.loc[selected_index, "Date"]))
+    selected = grid_response['selected_rows']
+    if selected:
+        idx = int(selected[0]['_selectedRowNodeInfo']['nodeId'])
+        row = df.loc[idx]
+
+        st.markdown("---")
+        st.subheader("✏️ Edit / Delete Selected Record")
+        
+        edit_date = st.date_input("Date", pd.to_datetime(row["Date"]))
         edit_category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
-                                     index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(df.loc[selected_index, "Category"]))
-        edit_description = st.text_input("Description", df.loc[selected_index, "Description"])
-        edit_vendor = st.text_input("Vendor", df.loc[selected_index, "Vendor"])
-        edit_amount = st.number_input("Amount", value=int(df.loc[selected_index, "Amount"]))
+                                     index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]))
+        edit_description = st.text_input("Description", row["Description"])
+        edit_vendor = st.text_input("Vendor", row["Vendor"])
+        edit_amount = st.number_input("Amount", value=int(row["Amount"]))
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("Update"):
-                df.loc[selected_index, "Date"] = edit_date
-                df.loc[selected_index, "Category"] = edit_category
-                df.loc[selected_index, "Description"] = edit_description
-                df.loc[selected_index, "Vendor"] = edit_vendor
-                df.loc[selected_index, "Amount"] = edit_amount
+            if st.button("Update Selected"):
+                df.loc[idx, "Date"] = edit_date
+                df.loc[idx, "Category"] = edit_category
+                df.loc[idx, "Description"] = edit_description
+                df.loc[idx, "Vendor"] = edit_vendor
+                df.loc[idx, "Amount"] = edit_amount
                 df.to_excel(excel_file, index=False)
                 st.success("✅ Record updated!")
-
         with col2:
-            if st.button("Delete"):
-                df = df.drop(selected_index)
+            if st.button("Delete Selected"):
+                df = df.drop(idx).reset_index(drop=True)
                 df.to_excel(excel_file, index=False)
                 st.success("✅ Record deleted!")
 
@@ -123,14 +137,13 @@ if os.path.exists(excel_file):
         cat_summary = df.groupby("Category")["Amount"].sum().reset_index()
         st.write("**Total by Category**")
         st.dataframe(cat_summary)
-
     with col2:
         df["Month"] = pd.to_datetime(df["Date"]).dt.to_period("M")
         month_summary = df.groupby("Month")["Amount"].sum().reset_index()
         st.write("**Total by Month**")
         st.dataframe(month_summary)
 
-    # Excel Download Button
+    # Excel Download
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Expenses")
@@ -140,5 +153,6 @@ if os.path.exists(excel_file):
         file_name="DuckSan_Expenses.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 else:
     st.info("No data saved yet.")
