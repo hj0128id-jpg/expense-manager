@@ -16,37 +16,38 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # ----------------------------------------
 st.markdown("""
     <style>
-    .record-row {
-        display: grid;
-        grid-template-columns: 120px 140px 200px 140px 100px 100px 100px;
-        padding: 6px 0;
-        border-bottom: 1px solid #e0e0e0;
-        align-items: center;
-    }
-    .record-row div {
-        padding-left: 6px;
+    .expense-table {
+        width: 100%;
+        border-collapse: collapse;
         font-size: 14px;
     }
-    .record-header {
-        display: grid;
-        grid-template-columns: 120px 140px 200px 140px 100px 100px 100px;
-        font-weight: bold;
+    .expense-table th {
         background-color: #2b5876;
         color: white;
-        padding: 8px 0;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
+        text-align: left;
+        padding: 8px;
     }
-    .stButton>button {
-        font-size: 15px !important;
-        padding: 2px 4px !important;
-        margin: 0 2px !important;
-        border: none !important;
-        background: none !important;
+    .expense-table td {
+        border-bottom: 1px solid #ddd;
+        padding: 6px 8px;
+        vertical-align: middle;
+    }
+    .receipt-btn {
+        background: none;
+        border: none;
+        color: #2b5876;
         cursor: pointer;
+        font-weight: bold;
     }
-    .stButton>button:hover {
-        opacity: 0.7;
+    .receipt-btn:hover {
+        text-decoration: underline;
+    }
+    .small-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 15px;
+        margin-right: 5px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -129,22 +130,20 @@ if os.path.exists(excel_file):
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-    # Title Row with Download Button
-    title_col1, title_col2 = st.columns([4, 1])
-    with title_col1:
+    # Title + Download
+    col1, col2 = st.columns([4, 1])
+    with col1:
         st.subheader("📋 Saved Records")
-    with title_col2:
+    with col2:
         with st.popover("📥 Download Excel"):
             selected_month = st.selectbox(
                 "Select month to download:",
                 sorted(df["Date"].dt.strftime("%Y-%m").unique(), reverse=True)
             )
             filtered_month = df[df["Date"].dt.strftime("%Y-%m") == selected_month]
-
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                 filtered_month.to_excel(writer, index=False, sheet_name=f"{selected_month}")
-
             st.download_button(
                 label=f"📤 Download {selected_month}.xlsx",
                 data=buffer.getvalue(),
@@ -152,7 +151,7 @@ if os.path.exists(excel_file):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-    # --- Filters ---
+    # Filters
     f1, f2, f3 = st.columns([1.5, 1.5, 1])
     with f1:
         month_filter = st.selectbox("📅 Filter by Month", ["All"] + sorted(df["Month"].unique(), reverse=True))
@@ -169,84 +168,51 @@ if os.path.exists(excel_file):
     if reset:
         filtered_df = df.copy()
 
-    # --- Table Header ---
-    st.markdown(
-        "<div class='record-header'>"
-        "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Receipt</div><div>Action</div>"
-        "</div>",
-        unsafe_allow_html=True
-    )
+    # Table Header
+    st.markdown("""
+        <table class='expense-table'>
+        <tr>
+            <th>Date</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Vendor</th>
+            <th>Amount</th>
+            <th>Receipt</th>
+            <th>Action</th>
+        </tr>
+    """, unsafe_allow_html=True)
 
-    # --- Editable Rows ---
+    # Table Rows
     for idx, row in filtered_df.iterrows():
-        st.markdown("<div class='record-row'>", unsafe_allow_html=True)
-        cols = st.columns([1.2, 1.4, 2.0, 1.4, 1.0, 1.0, 1.0])
-        cols[0].write(row["Date"].strftime("%Y-%m-%d"))
-        cols[1].write(row["Category"])
-        cols[2].write(row["Description"])
-        cols[3].write(row["Vendor"])
-        cols[4].write(f"Rp {int(row['Amount']):,}")
-
-        # Receipt preview button
+        receipt_html = "-"
         if pd.notna(row["Receipt"]) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
-            with cols[5]:
-                with st.expander("🔍 View"):
-                    file_path = os.path.join(receipt_folder, row["Receipt"])
-                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                        st.image(file_path, width=450)
-                    elif file_path.lower().endswith(".pdf"):
-                        st.markdown(f"📄 [Open PDF]({file_path})")
-        else:
-            cols[5].write("-")
+            receipt_html = f"<button class='receipt-btn' id='btn_{idx}'>🔍 View</button>"
 
-        # Edit/Delete Buttons
-        with cols[6]:
-            c1, c2 = st.columns(2)
-            if c1.button("✏️", key=f"edit_{idx}"):
-                with st.form(f"edit_form_{idx}"):
-                    st.write("**✏️ Edit Record**")
-                    new_date = st.date_input("Date", row["Date"])
-                    new_category = st.selectbox("Category",
-                        ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
-                        index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"])
-                    )
-                    new_desc = st.text_input("Description", row["Description"])
-                    new_vendor = st.text_input("Vendor", row["Vendor"])
-                    new_amount = st.number_input("Amount (Rp)", value=int(row["Amount"]), step=1000)
-                    submitted = st.form_submit_button("💾 Update")
-                    if submitted:
-                        df.loc[row.name, "Date"] = new_date
-                        df.loc[row.name, "Category"] = new_category
-                        df.loc[row.name, "Description"] = new_desc
-                        df.loc[row.name, "Vendor"] = new_vendor
-                        df.loc[row.name, "Amount"] = new_amount
-                        df.to_excel(excel_file, index=False)
-                        st.success("✅ Record updated successfully!")
-                        time.sleep(0.3)
-                        st.rerun()
+        st.markdown(
+            f"""
+            <tr>
+                <td>{row['Date'].strftime('%Y-%m-%d')}</td>
+                <td>{row['Category']}</td>
+                <td>{row['Description']}</td>
+                <td>{row['Vendor']}</td>
+                <td>Rp {int(row['Amount']):,}</td>
+                <td>{receipt_html}</td>
+                <td>✏️ 🗑️</td>
+            </tr>
+            """,
+            unsafe_allow_html=True
+        )
 
-            if c2.button("🗑️", key=f"delete_{idx}"):
-                df = df.drop(row.name).reset_index(drop=True)
-                df.to_excel(excel_file, index=False)
-                st.success(f"🗑️ Deleted: {row['Description']}")
-                time.sleep(0.3)
-                st.rerun()
+    st.markdown("</table>", unsafe_allow_html=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # ----------------------------------------
-    # SUMMARY SECTION
-    # ----------------------------------------
+    # Summary
     st.markdown("---")
     st.subheader("📊 Summary (Filtered Data)")
-    col1, col2 = st.columns(2)
-    with col1:
-        cat_summary = filtered_df.groupby("Category")["Amount"].sum().reset_index()
-        st.write("**Total by Category**")
-        st.dataframe(cat_summary)
-    with col2:
-        month_summary = filtered_df.groupby("Month")["Amount"].sum().reset_index()
-        st.write("**Total by Month**")
-        st.dataframe(month_summary)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.dataframe(filtered_df.groupby("Category")["Amount"].sum().reset_index())
+    with c2:
+        st.dataframe(filtered_df.groupby("Month")["Amount"].sum().reset_index())
+
 else:
     st.info("No data saved yet.")
