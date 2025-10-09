@@ -3,46 +3,36 @@ import pandas as pd
 import os
 from PIL import Image
 from datetime import datetime
-from io import BytesIO
 
 # ----------------------------------------
-# Basic Config
+# PAGE CONFIG
 # ----------------------------------------
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
-# Custom CSS
-st.markdown("""
-    <style>
-    div[data-testid="stHorizontalBlock"] > div {
-        border-bottom: 1px solid #e5e5e5;
-        padding: 6px 0;
-    }
-    th {
-        background-color: #2b5876 !important;
-        color: white !important;
-        text-align: center !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # ----------------------------------------
-# Header
+# HEADER
 # ----------------------------------------
 if os.path.exists("unnamed.png"):
     logo = Image.open("unnamed.png")
     st.image(logo, width=280)
 else:
-    st.warning("⚠️ Please upload your logo file (unnamed.png) in the same folder.")
+    st.warning("⚠️ Please upload 'unnamed.png' (your logo) into this repo.")
 
 st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ----------------------------------------
-# Input Section
+# PATHS
 # ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
 
+if not os.path.exists(receipt_folder):
+    os.makedirs(receipt_folder)
+
+# ----------------------------------------
+# INPUT FORM
+# ----------------------------------------
 col1, col2, col3 = st.columns(3)
 with col1:
     date = st.date_input("Date", datetime.today())
@@ -62,14 +52,12 @@ receipt_name = None
 if receipt_file is not None:
     receipt_bytes = receipt_file.read()
     receipt_name = receipt_file.name
-    if not os.path.exists(receipt_folder):
-        os.makedirs(receipt_folder)
     with open(os.path.join(receipt_folder, receipt_name), "wb") as f:
         f.write(receipt_bytes)
     st.success(f"📎 Uploaded: {receipt_name}")
 
 # ----------------------------------------
-# Save Button
+# SAVE RECORD
 # ----------------------------------------
 if st.button("💾 Save"):
     new_data = pd.DataFrame({
@@ -91,7 +79,7 @@ if st.button("💾 Save"):
     st.success("✅ Data saved successfully!")
 
 # ----------------------------------------
-# Display Table + Popup
+# DISPLAY RECORDS
 # ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
@@ -100,17 +88,17 @@ if os.path.exists(excel_file):
 
     st.subheader("📋 Saved Records")
 
-    # Display header
+    # Header row
     st.markdown(
-        "<div style='font-weight:bold;display:grid;grid-template-columns:140px 160px 250px 160px 120px 80px;'>"
+        "<div style='font-weight:bold;display:grid;grid-template-columns:140px 160px 250px 160px 120px 100px;'>"
         "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Receipt</div>"
         "</div>",
         unsafe_allow_html=True
     )
 
-    # Show rows
+    # Row display
     for idx, row in df.iterrows():
-        cols = st.columns([1.5, 1.5, 2, 1.5, 1, 0.6])
+        cols = st.columns([1.4, 1.4, 2.2, 1.3, 1, 0.8])
         cols[0].write(row["Date"].strftime("%Y-%m-%d"))
         cols[1].write(row["Category"])
         cols[2].write(row["Description"])
@@ -118,19 +106,17 @@ if os.path.exists(excel_file):
         cols[4].write(f"Rp {int(row['Amount']):,}")
 
         if pd.notna(row["Receipt"]) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
-            if cols[5].button("🔍 View", key=f"view_{idx}"):
+            with cols[5].expander("🔍 View"):
                 file_path = os.path.join(receipt_folder, row["Receipt"])
-                with st.modal(f"🧾 Receipt Preview — {row['Receipt']}"):
-                    if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                        st.image(file_path, width=500)
-                    elif file_path.lower().endswith(".pdf"):
-                        st.markdown(f"📄 [Open PDF Receipt]({file_path})")
-                    st.button("Close")
+                if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+                    st.image(file_path, width=500)
+                elif file_path.lower().endswith(".pdf"):
+                    st.markdown(f"📄 [Open PDF Receipt]({file_path})")
         else:
             cols[5].write("-")
 
     # ----------------------------------------
-    # Summary Section
+    # SUMMARY
     # ----------------------------------------
     st.markdown("---")
     st.subheader("📊 Summary")
@@ -144,5 +130,6 @@ if os.path.exists(excel_file):
         month_summary = df.groupby("Month")["Amount"].sum().reset_index()
         st.write("**Total by Month**")
         st.dataframe(month_summary)
+
 else:
     st.info("No data saved yet.")
