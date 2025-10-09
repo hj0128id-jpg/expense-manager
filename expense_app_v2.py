@@ -1,4 +1,3 @@
-# expense_app_v2.py (v23) — Header/Rows perfectly aligned
 import streamlit as st
 import pandas as pd
 import os
@@ -7,48 +6,107 @@ from datetime import datetime
 import time
 from io import BytesIO
 
+# ----------------------------------------
+# PAGE CONFIG
+# ----------------------------------------
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
-# CSS: 작은 버튼, 표 스타일
+# ----------------------------------------
+# CSS STYLING
+# ----------------------------------------
 st.markdown("""
     <style>
-    .hdr {
-        background-color:#2b5876;
-        color: white;
-        padding: 8px 6px;
-        border-radius: 6px;
-        font-weight:600;
+    /* 전체 폰트와 컬러 */
+    html, body, [class*="st"] {
+        font-family: "Segoe UI", sans-serif;
+        color: #333333;
     }
-    .small-btn {
-        font-size:15px !important;
-        padding: 2px 6px !important;
-        margin:0 2px !important;
+
+    /* 표 스타일 */
+    .expense-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 13.5px;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
     }
-    .receipt-expander > div {
-        padding: 6px 0;
+
+    .expense-table thead {
+        background: linear-gradient(90deg, #2b5876, #4e4376);
+        color: #fff;
+    }
+
+    .expense-table th, .expense-table td {
+        text-align: left;
+        padding: 10px 14px;
+    }
+
+    .expense-table tbody tr:nth-child(even) {
+        background-color: #f8f9fa;
+    }
+
+    .expense-table tbody tr:hover {
+        background-color: #e9f3ff;
+        transition: 0.2s ease;
+    }
+
+    .icon-btn {
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-size: 16px;
+        color: #2b5876;
+        margin-right: 4px;
+    }
+
+    .icon-btn:hover {
+        color: #1b3f5d;
+    }
+
+    .receipt-btn {
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: #007bff;
+        font-weight: 600;
+    }
+
+    .receipt-btn:hover {
+        text-decoration: underline;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# logo + title
+# ----------------------------------------
+# HEADER
+# ----------------------------------------
 if os.path.exists("unnamed.png"):
     logo = Image.open("unnamed.png")
     st.image(logo, width=240)
 st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-# paths
+# ----------------------------------------
+# FILE PATHS
+# ----------------------------------------
 excel_file = "expenses.xlsx"
 receipt_folder = "receipts"
 os.makedirs(receipt_folder, exist_ok=True)
 
-# Input form
-c1, c2, c3 = st.columns(3)
-with c1:
+# ----------------------------------------
+# INPUT FORM
+# ----------------------------------------
+col1, col2, col3 = st.columns(3)
+with col1:
     date = st.date_input("Date", datetime.today())
-with c2:
-    category = st.selectbox("Category", ["Transportation","Meals","Entertainment","Office","Office Supply","ETC"])
-with c3:
+with col2:
+    category = st.selectbox(
+        "Category",
+        ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
+    )
+with col3:
     amount = st.number_input("Amount (Rp)", min_value=0, step=1000)
 
 description = st.text_input("Description")
@@ -63,9 +121,11 @@ if receipt_file is not None:
         f.write(receipt_bytes)
     st.success(f"📎 Uploaded: {receipt_name}")
 
-# Save
-if st.button("💾 Save"):
-    new = pd.DataFrame({
+# ----------------------------------------
+# SAVE
+# ----------------------------------------
+if st.button("💾 Save Record"):
+    new_data = pd.DataFrame({
         "Date":[date],
         "Category":[category],
         "Description":[description],
@@ -73,129 +133,99 @@ if st.button("💾 Save"):
         "Amount":[amount],
         "Receipt":[receipt_name]
     })
+
     if os.path.exists(excel_file):
         df_old = pd.read_excel(excel_file)
-        df = pd.concat([df_old, new], ignore_index=True)
+        df = pd.concat([df_old, new_data], ignore_index=True)
     else:
-        df = new
+        df = new_data
     df.to_excel(excel_file, index=False)
-    st.success("✅ Saved")
-    time.sleep(0.4)
+    st.success("✅ Saved Successfully!")
+    time.sleep(0.3)
     st.rerun()
 
-# If data exists -> display with perfectly aligned header & rows
+# ----------------------------------------
+# DISPLAY SECTION
+# ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
     df["Date"] = pd.to_datetime(df["Date"])
     df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-    # Title row with Download (on same visual line)
-    left, right = st.columns([4,1])
-    with left:
+    # Title + Download
+    title_col1, title_col2 = st.columns([4,1])
+    with title_col1:
         st.subheader("📋 Saved Records")
-    with right:
-        # Download popover: select month -> download
-        with st.expander("📥 Download", expanded=False):
+    with title_col2:
+        with st.popover("📥 Download Excel"):
             months = sorted(df["Month"].unique(), reverse=True)
-            if months:
-                sel_m = st.selectbox("Select month", months)
-                filt = df[df["Month"]==sel_m]
-                buf = BytesIO()
-                with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                    filt.to_excel(writer, index=False, sheet_name=sel_m)
-                st.download_button(f"📤 Download {sel_m}.xlsx", data=buf.getvalue(),
-                                   file_name=f"DuckSan_Expense_{sel_m}.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            else:
-                st.write("No data")
+            sel_month = st.selectbox("Select month", months)
+            filtered = df[df["Month"] == sel_month]
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                filtered.to_excel(writer, index=False, sheet_name=sel_month)
+            st.download_button(
+                label=f"📤 Download {sel_month}.xlsx",
+                data=buffer.getvalue(),
+                file_name=f"DuckSan_Expense_{sel_month}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-    # Filters
+    # Filter
     f1, f2, f3 = st.columns([1.5,1.5,1])
     with f1:
-        month_filter = st.selectbox("📅 Filter by Month", ["All"] + sorted(df["Month"].unique(), reverse=True))
+        month_filter = st.selectbox("📅 Month Filter", ["All"] + months)
     with f2:
-        cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
+        cat_filter = st.selectbox("📂 Category Filter", ["All"] + sorted(df["Category"].unique()))
     with f3:
-        reset = st.button("🔄 Reset Filters")
+        reset = st.button("🔄 Reset")
 
-    filtered = df.copy()
+    view_df = df.copy()
     if month_filter != "All":
-        filtered = filtered[filtered["Month"]==month_filter]
+        view_df = view_df[view_df["Month"] == month_filter]
     if cat_filter != "All":
-        filtered = filtered[filtered["Category"]==cat_filter]
+        view_df = view_df[view_df["Category"] == cat_filter]
     if reset:
-        filtered = df.copy()
+        view_df = df.copy()
 
-    st.markdown("")  # spacer
+    # --- Table Rendering ---
+    html = """
+    <table class='expense-table'>
+        <thead>
+            <tr>
+                <th>Date</th><th>Category</th><th>Description</th>
+                <th>Vendor</th><th>Amount</th><th>Receipt</th><th>Action</th>
+            </tr>
+        </thead><tbody>
+    """
 
-    # ---- HEADER: use st.columns with SAME ratios as rows ----
-    col_ratios = [1.2, 1.4, 2.0, 1.4, 1.0, 0.9, 0.9]  # must match rows below
-    hcols = st.columns(col_ratios)
-    headers = ["Date","Category","Description","Vendor","Amount","Receipt","Action"]
-    for hc, title in zip(hcols, headers):
-        hc.markdown(f"<div class='hdr'>{title}</div>", unsafe_allow_html=True)
+    for idx, r in view_df.iterrows():
+        receipt_link = "-"
+        if pd.notna(r["Receipt"]) and os.path.exists(os.path.join(receipt_folder, r["Receipt"])):
+            receipt_link = f"<button class='receipt-btn' id='r_{idx}'>View</button>"
 
-    # ---- ROWS: use same ratios ----
-    for idx, row in filtered.iterrows():
-        rows = st.columns(col_ratios)
-        rows[0].write(row["Date"].strftime("%Y-%m-%d"))
-        rows[1].write(row["Category"])
-        rows[2].write(row["Description"])
-        rows[3].write(row["Vendor"])
-        rows[4].write(f"Rp {int(row['Amount']):,}")
+        html += f"""
+        <tr>
+            <td>{r['Date'].strftime('%Y-%m-%d')}</td>
+            <td>{r['Category']}</td>
+            <td>{r['Description']}</td>
+            <td>{r['Vendor']}</td>
+            <td>Rp {int(r['Amount']):,}</td>
+            <td>{receipt_link}</td>
+            <td>✏️ 🗑️</td>
+        </tr>
+        """
 
-        # Receipt preview (expander)
-        if pd.notna(row.get("Receipt")) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
-            with rows[5].expander("🔍 View"):
-                p = os.path.join(receipt_folder, row["Receipt"])
-                if p.lower().endswith((".png",".jpg",".jpeg")):
-                    st.image(p, width=480)
-                else:
-                    st.markdown(f"📄 [Open PDF]({p})")
-        else:
-            rows[5].write("-")
-
-        # Actions (small icon buttons)
-        with rows[6]:
-            c_edit, c_del = st.columns([1,1])
-            if c_edit.button("✏️", key=f"edit_{idx}"):
-                with st.form(f"form_edit_{idx}"):
-                    nd = st.date_input("Date", value=row["Date"])
-                    nc = st.selectbox("Category",
-                                      ["Transportation","Meals","Entertainment","Office","Office Supply","ETC"],
-                                      index=["Transportation","Meals","Entertainment","Office","Office Supply","ETC"].index(row["Category"]))
-                    nds = st.text_input("Description", value=row["Description"])
-                    nv = st.text_input("Vendor", value=row["Vendor"])
-                    na = st.number_input("Amount (Rp)", value=int(row["Amount"]), step=1000)
-                    submitted = st.form_submit_button("💾 Update")
-                    if submitted:
-                        # update by original index (row.name)
-                        df.loc[row.name, "Date"] = nd
-                        df.loc[row.name, "Category"] = nc
-                        df.loc[row.name, "Description"] = nds
-                        df.loc[row.name, "Vendor"] = nv
-                        df.loc[row.name, "Amount"] = na
-                        df.to_excel(excel_file, index=False)
-                        st.success("✅ Updated")
-                        time.sleep(0.3)
-                        st.rerun()
-            if c_del.button("🗑️", key=f"del_{idx}"):
-                df = df.drop(row.name).reset_index(drop=True)
-                df.to_excel(excel_file, index=False)
-                st.success("🗑️ Deleted")
-                time.sleep(0.3)
-                st.rerun()
+    html += "</tbody></table>"
+    st.markdown(html, unsafe_allow_html=True)
 
     # Summary
     st.markdown("---")
-    st.subheader("📊 Summary (Filtered)")
-    s1, s2 = st.columns(2)
-    with s1:
-        s_cat = filtered.groupby("Category")["Amount"].sum().reset_index()
-        st.dataframe(s_cat)
-    with s2:
-        s_mon = filtered.groupby("Month")["Amount"].sum().reset_index()
-        st.dataframe(s_mon)
-
+    st.subheader("📊 Summary (Filtered Data)")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.dataframe(view_df.groupby("Category")["Amount"].sum().reset_index(), use_container_width=True)
+    with c2:
+        st.dataframe(view_df.groupby("Month")["Amount"].sum().reset_index(), use_container_width=True)
 else:
-    st.info("No data yet.")
+    st.info("No records yet.")
