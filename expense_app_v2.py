@@ -7,13 +7,27 @@ from io import BytesIO
 import time
 
 # ----------------------------------------
-# CONFIG
+# PAGE CONFIG
 # ----------------------------------------
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
-st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
+# ----------------------------------------
+# GLOBAL STATE
+# ----------------------------------------
+if "sort_order" not in st.session_state:
+    st.session_state.sort_order = "desc"
+if "active_row" not in st.session_state:
+    st.session_state.active_row = None
+if "active_mode" not in st.session_state:
+    st.session_state.active_mode = None
 
-# ✅ 표 줄 추가 CSS 블록 시작
+excel_file = "expenses.xlsx"
+receipt_folder = "receipts"
+os.makedirs(receipt_folder, exist_ok=True)
+
+# ----------------------------------------
+# GLOBAL CSS (테이블 + Summary)
+# ----------------------------------------
 st.markdown("""
 <style>
 body { font-family: 'Segoe UI', sans-serif; }
@@ -42,21 +56,7 @@ th {
 tr:nth-child(even) { background-color: #fafafa; }
 tr:hover { background-color: #eef3ff; }
 
-/* ✅ Summary 영역 색상 통일 */
-[data-testid="stTable"] table {
-  background-color: white !important;
-  color: black !important;
-  border: 1px solid #ccc !important;
-}
-[data-testid="stTable"] th {
-  background-color: #2b5876 !important;
-  color: white !important;
-}
-[data-testid="stTable"] td {
-  border: 1px solid #ccc !important;
-}
-
-/* 🌙 다크모드 대응 */
+/* 🌙 다크모드 */
 @media (prefers-color-scheme: dark) {
   table {
     background-color: #1e1e1e !important;
@@ -70,37 +70,43 @@ tr:hover { background-color: #eef3ff; }
   td { border-color: #555 !important; }
   tr:nth-child(even) { background-color: #232323 !important; }
   tr:hover { background-color: #303030 !important; }
+}
 
-  /* ✅ Summary 박스 어둡게 통일 */
-  [data-testid="stTable"] table {
-    background-color: #1e1e1e !important;
+/* ✅ Summary 테이블 전용 */
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 14px;
+  background: transparent;
+}
+.summary-table th, .summary-table td {
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  text-align: left;
+}
+.summary-table th {
+  background: linear-gradient(90deg, #2b5876, #4e4376);
+  color: white;
+}
+.summary-table tr:nth-child(even) { background-color: #fafafa; }
+.summary-table tr:hover { background-color: #eef3ff; }
+
+/* 다크모드 Summary */
+@media (prefers-color-scheme: dark) {
+  .summary-table {
+    background-color: transparent !important;
     color: #f0f0f0 !important;
-    border-color: #555 !important;
   }
-  [data-testid="stTable"] th {
-    background: linear-gradient(90deg, #3b7dd8, #4e4376) !important;
-    color: #fff !important;
+  .summary-table th {
+    background: linear-gradient(90deg, #3b7dd8, #4e4376);
   }
-  [data-testid="stTable"] td {
-    border: 1px solid #444 !important;
-  }
+  .summary-table td { border-color: #555; }
+  .summary-table tr:nth-child(even) { background-color: #232323; }
+  .summary-table tr:hover { background-color: #303030; }
 }
 </style>
 """, unsafe_allow_html=True)
-
-# ✅ 표 줄 추가 CSS 블록 끝
-
-
-excel_file = "expenses.xlsx"
-receipt_folder = "receipts"
-os.makedirs(receipt_folder, exist_ok=True)
-
-if "sort_order" not in st.session_state:
-    st.session_state.sort_order = "desc"
-if "active_row" not in st.session_state:
-    st.session_state.active_row = None
-if "active_mode" not in st.session_state:
-    st.session_state.active_mode = None
 
 # ----------------------------------------
 # HEADER
@@ -181,7 +187,7 @@ if reset:
 asc_flag = True if st.session_state.sort_order == "asc" else False
 view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
-# 헤더 + 다운로드
+# Header + Download
 h1, h2 = st.columns([3, 1])
 with h1:
     st.markdown(f"### 📋 Saved Records ({'⬆️ Ascending' if asc_flag else '⬇️ Descending'})")
@@ -204,7 +210,7 @@ if st.button("🔁 Toggle Sort Order"):
     st.rerun()
 
 # ----------------------------------------
-# TABLE (Streamlit Grid Style)
+# TABLE (정렬된 Streamlit Columns)
 # ----------------------------------------
 st.markdown("#### Expense Table")
 header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.2, 1.5])
@@ -239,7 +245,6 @@ for i, row in view_df.iterrows():
                 time.sleep(0.5)
                 st.rerun()
 
-    # 확장 영역
     if st.session_state.active_row == i:
         st.markdown("---")
         if st.session_state.active_mode == "view":
@@ -267,7 +272,6 @@ for i, row in view_df.iterrows():
             new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{i}")
             new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{i}")
             new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{i}")
-
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{i}"):
@@ -285,42 +289,14 @@ for i, row in view_df.iterrows():
                     st.rerun()
 
 # ----------------------------------------
-# SUMMARY
+# SUMMARY (박스 제거 + 왼쪽정렬)
 # ----------------------------------------
-# ----------------------------------------
-# CLEAN SUMMARY TABLES
-# ----------------------------------------
-summary_css = """
-<style>
-.summary-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-  font-size: 14px;
-}
-.summary-table th, .summary-table td {
-  border: 1px solid #ccc;
-  padding: 8px 10px;
-  text-align: left; /* ✅ 왼쪽 정렬 */
-}
-.summary-table th {
-  background: linear-gradient(90deg, #2b5876, #4e4376);
-  color: white;
-}
-.summary-table tr:nth-child(even) { background-color: #fafafa; }
-.summary-table tr:hover { background-color: #eef3ff; }
-
-/* 🌙 다크모드 */
-@media (prefers-color-scheme: dark) {
-  .summary-table { background-color: #1e1e1e; color: #f0f0f0; }
-  .summary-table th { background: linear-gradient(90deg, #3b7dd8, #4e4376); }
-  .summary-table td { border-color: #555; }
-  .summary-table tr:nth-child(even) { background-color: #232323; }
-  .summary-table tr:hover { background-color: #303030; }
-}
-</style>
-"""
-st.markdown(summary_css, unsafe_allow_html=True)
+st.markdown("---")
+st.subheader("📊 Summary (Filtered Data)")
+cat_sum = view_df.groupby("Category", as_index=False)["Amount"].sum()
+cat_sum["Amount"] = cat_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
+mon_sum = view_df.groupby("Month", as_index=False)["Amount"].sum()
+mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
 c1, c2 = st.columns(2)
 with c1:
@@ -329,8 +305,3 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.markdown(mon_sum.to_html(index=False, classes='summary-table'), unsafe_allow_html=True)
-
-
-
-
-
