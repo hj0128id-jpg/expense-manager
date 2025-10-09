@@ -4,6 +4,7 @@ import os
 from PIL import Image
 from datetime import datetime
 import time
+from io import BytesIO
 
 # ----------------------------------------
 # PAGE CONFIG
@@ -59,7 +60,31 @@ if os.path.exists("unnamed.png"):
 else:
     st.warning("⚠️ Please upload your logo file (unnamed.png) in the same folder.")
 
-st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
+header_col1, header_col2 = st.columns([4, 1])
+with header_col1:
+    st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Management System</h1>", unsafe_allow_html=True)
+with header_col2:
+    if os.path.exists("expenses.xlsx"):
+        with st.popover("📥 Download Excel"):
+            df = pd.read_excel("expenses.xlsx")
+            df["Date"] = pd.to_datetime(df["Date"])
+            df["Month"] = df["Date"].dt.strftime("%Y-%m")
+            selected_month = st.selectbox("Select month to download:", sorted(df["Month"].unique(), reverse=True))
+            filtered = df[df["Month"] == selected_month]
+
+            # Convert filtered data to Excel binary
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                filtered.to_excel(writer, index=False, sheet_name=f"{selected_month}")
+            st.download_button(
+                label=f"📤 Download {selected_month}.xlsx",
+                data=buffer.getvalue(),
+                file_name=f"DuckSan_Expense_{selected_month}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    else:
+        st.button("📥 Download Excel", disabled=True)
+
 st.markdown("---")
 
 # ----------------------------------------
