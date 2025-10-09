@@ -4,7 +4,6 @@ import os
 from PIL import Image
 from datetime import datetime
 from io import BytesIO
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 # ----------------------------------------
 # Basic Config
@@ -14,13 +13,14 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # Custom CSS
 st.markdown("""
     <style>
-    .ag-theme-streamlit {
-        --ag-header-background-color: #2b5876;
-        --ag-header-foreground-color: white;
-        --ag-row-hover-color: #e3f2fd;
-        --ag-odd-row-background-color: #fafafa;
-        --ag-font-size: 15px;
-        border-radius: 10px;
+    div[data-testid="stHorizontalBlock"] > div {
+        border-bottom: 1px solid #e5e5e5;
+        padding: 6px 0;
+    }
+    th {
+        background-color: #2b5876 !important;
+        color: white !important;
+        text-align: center !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -91,7 +91,7 @@ if st.button("💾 Save"):
     st.success("✅ Data saved successfully!")
 
 # ----------------------------------------
-# Display Table + Modal Preview
+# Display Table + Popup
 # ----------------------------------------
 if os.path.exists(excel_file):
     df = pd.read_excel(excel_file)
@@ -100,9 +100,17 @@ if os.path.exists(excel_file):
 
     st.subheader("📋 Saved Records")
 
-    # Show table with clickable receipt names
+    # Display header
+    st.markdown(
+        "<div style='font-weight:bold;display:grid;grid-template-columns:140px 160px 250px 160px 120px 80px;'>"
+        "<div>Date</div><div>Category</div><div>Description</div><div>Vendor</div><div>Amount</div><div>Receipt</div>"
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+    # Show rows
     for idx, row in df.iterrows():
-        cols = st.columns([1.5, 1.5, 2, 1.5, 1, 0.5])
+        cols = st.columns([1.5, 1.5, 2, 1.5, 1, 0.6])
         cols[0].write(row["Date"].strftime("%Y-%m-%d"))
         cols[1].write(row["Category"])
         cols[2].write(row["Description"])
@@ -112,13 +120,18 @@ if os.path.exists(excel_file):
         if pd.notna(row["Receipt"]) and os.path.exists(os.path.join(receipt_folder, row["Receipt"])):
             if cols[5].button("🔍 View", key=f"view_{idx}"):
                 file_path = os.path.join(receipt_folder, row["Receipt"])
-                with st.modal("🧾 Receipt Preview"):
+                with st.modal(f"🧾 Receipt Preview — {row['Receipt']}"):
                     if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
                         st.image(file_path, width=500)
                     elif file_path.lower().endswith(".pdf"):
                         st.markdown(f"📄 [Open PDF Receipt]({file_path})")
                     st.button("Close")
+        else:
+            cols[5].write("-")
 
+    # ----------------------------------------
+    # Summary Section
+    # ----------------------------------------
     st.markdown("---")
     st.subheader("📊 Summary")
 
