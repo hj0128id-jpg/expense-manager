@@ -8,6 +8,7 @@ import tempfile
 import mimetypes
 import re
 import uuid
+import json
 from supabase import create_client
 
 # ====================================================
@@ -30,13 +31,13 @@ if "active_row" not in st.session_state:
 if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 if "sort_order" not in st.session_state:
-    st.session_state.sort_order = "desc"  # 기본 최신순
+    st.session_state.sort_order = "desc"  # 기본: 최신순
 
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
 
 # ====================================================
-# 업로드 헬퍼 (Supabase Storage)
+# 업로드 헬퍼
 # ====================================================
 def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
     mime_type, _ = mimetypes.guess_type(file_name)
@@ -94,16 +95,6 @@ def load_and_ensure_ids(excel_path):
     base_cols = ["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]
     if not os.path.exists(excel_path):
         return pd.DataFrame(columns=base_cols)
-        # ✅ Clean up: 완전 빈 행 / Amount 0행 제거
-try:
-    temp_df = pd.read_excel(excel_file)
-    temp_df = temp_df.dropna(how="all")  # 전부 NaN인 행 제거
-    temp_df = temp_df[~((temp_df["Amount"].fillna(0) == 0) &
-                        (temp_df["Description"].isin(["-", "", None])) &
-                        (temp_df["Category"].isin(["-", "", None])))]
-    temp_df.to_excel(excel_file, index=False)
-except Exception:
-    pass
     df = pd.read_excel(excel_path).fillna("-")
     if "Receipt" in df.columns and "Receipt_url" not in df.columns:
         df = df.rename(columns={"Receipt": "Receipt_url"})
@@ -122,7 +113,6 @@ except Exception:
 def sync_supabase_to_excel(excel_path):
     try:
         res = supabase.table("expense-data").select("*").execute()
-        import json
         data = json.loads(res.json())
         supa_data = pd.DataFrame(data if data else [])
         if supa_data.empty:
@@ -177,7 +167,7 @@ if st.button("💾 Save Record"):
     else:
         df_all = new_df
 
-    # ✅ 항상 최신순으로 정렬 저장
+    # ✅ 자동 최신순 정렬
     df_all["Date"] = pd.to_datetime(df_all["Date"], errors="coerce")
     df_all = df_all.sort_values("Date", ascending=False)
     df_all.to_excel(excel_file, index=False)
@@ -191,11 +181,26 @@ if st.button("💾 Save Record"):
     st.rerun()
 
 # ====================================================
-# LOAD + SYNC BOTH
+# LOAD + SYNC BOTH + AUTO CLEANUP
 # ====================================================
 df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
+
+# ✅ 자동 클린업: 완전 빈 행 / Rp 0행 제거
+try:
+    temp_df = pd.read_excel(excel_file)
+    temp_df = temp_df.dropna(how="all")
+    temp_df = temp_df[~((temp_df["Amount"].fillna(0) == 0) &
+                        (temp_df["Description"].isin(["-", "", None])) &
+                        (temp_df["Category"].isin(["-", "", None])))]
+    temp_df.to_excel(excel_file, index=False)
+except Exception:
+    pass
+
+# ====================================================
+# RELOAD CLEANED DATA
+# ====================================================
 df = pd.read_excel(excel_file).fillna("-")
 df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
@@ -223,7 +228,6 @@ if cat_filter != "All":
 st.markdown("### 📋 Saved Records")
 header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
 
-# 정렬 버튼
 with header_cols[0]:
     sort_icon = "⬇️" if st.session_state.sort_order == "desc" else "⬆️"
     if st.button(f"📅 Date {sort_icon}"):
@@ -233,7 +237,6 @@ with header_cols[0]:
 for c, h in zip(header_cols[1:], ["Category", "Description", "Vendor", "Amount", "Receipt_url", "Actions"]):
     c.markdown(f"**{h}**")
 
-# 정렬 적용
 ascending_flag = True if st.session_state.sort_order == "asc" else False
 view_df = view_df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
 
@@ -253,7 +256,6 @@ for _, row in view_df.iterrows():
     link = row.get("Receipt_url", "-")
     cols[5].markdown(f"[🔗 View]({link})" if str(link).startswith("http") else "-", unsafe_allow_html=True)
 
-    # Actions
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -277,7 +279,6 @@ for _, row in view_df.iterrows():
                 time.sleep(0.4)
                 st.rerun()
 
-    # Active Row: View / Edit
     if st.session_state.active_row == row_id:
         st.markdown("---")
         if st.session_state.active_mode == "view":
@@ -330,7 +331,7 @@ for _, row in view_df.iterrows():
                     st.rerun()
 
 # ====================================================
-# SUMMARY SECTION (거래 전체 표시 버전)
+# SUMMARY
 # ====================================================
 st.markdown("---")
 st.subheader("📊 Monthly & Category Summary")
@@ -358,9 +359,7 @@ else:
         f"{count} transactions, Rp {int(total):,}"
     )
 
-    # ✅ 모든 거래 내역 그대로 표시
     display_df = summary_df[["Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]].copy()
     display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
     display_df["Amount"] = display_df["Amount"].apply(lambda x: f"Rp {int(x):,}")
     st.dataframe(display_df, use_container_width=True)
-
