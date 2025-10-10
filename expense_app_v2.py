@@ -6,6 +6,7 @@ from datetime import datetime
 from io import BytesIO
 import time
 import tempfile
+import mimetypes
 from supabase import create_client
 
 # ====================================================
@@ -29,34 +30,37 @@ excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
 
 # ====================================================
-# UPLOAD HELPER (버전 자동 감지)
-# ====================================================
-def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
-    """버전 호환 업로드 함수"""
-    try:
-        # 최신 supabase SDK인 경우
-        from storage3.utils import FileOptions
-        res = supabase.storage.from_(Receipts).upload(
-            file_name,
-            file_path,
-            file_options=FileOptions(upsert=True)
-        )
-    except ImportError:
-        # 구버전 supabase SDK 호환용
-        res = supabase.storage.from_(bucket_name).upload(
-            file_name,
-            file_path,
-            {"cacheControl": "3600", "upsert": "true"}
-        )
-    return res
-
-# ====================================================
 # HEADER
 # ====================================================
 if os.path.exists("unnamed.png"):
     st.image(Image.open("unnamed.png"), width=240)
 st.markdown("<h1 style='color:#2b5876;'>💰 Duck San Expense Manager</h1>", unsafe_allow_html=True)
 st.markdown("---")
+
+# ====================================================
+# FILE UPLOAD HELPER (with MIME + fallback)
+# ====================================================
+def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
+    """MIME 타입 지정 + 호환성 업로드 함수"""
+    mime_type, _ = mimetypes.guess_type(file_name)
+    if mime_type is None:
+        mime_type = "application/octet-stream"
+
+    try:
+        with open(file_path, "rb") as f:
+            res = supabase.storage.from_(bucket_name).upload(
+                file_name,
+                f,
+                {
+                    "cache-control": "3600",
+                    "upsert": "true",
+                    "content-type": mime_type
+                }
+            )
+        return res
+    except Exception as e:
+        st.error(f"🚨 업로드 중 오류: {e}")
+        return None
 
 # ====================================================
 # INPUT FORM
@@ -84,7 +88,7 @@ if receipt_file is not None:
         if res and hasattr(res, "status_code") and res.status_code in (200, 201):
             receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{receipt_name}"
         else:
-            st.warning(f"⚠️ Supabase 업로드 실패: {getattr(res, 'status_code', 'Unknown')}")
+            st.warning(f"⚠️ Supabase 업로드 실패 (응답: {getattr(res, 'status_code', 'Unknown')})")
 
 # ====================================================
 # SAVE RECORD
@@ -195,4 +199,3 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.dataframe(mon_sum)
-
