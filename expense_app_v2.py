@@ -6,11 +6,7 @@ from datetime import datetime
 from io import BytesIO
 import time
 import tempfile
-import json
-from google.oauth2.service_account import Credentials
-import gspread
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from supabase import create_client
 
 # ====================================================
 # PAGE CONFIG
@@ -18,68 +14,19 @@ from googleapiclient.http import MediaFileUpload
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
 # ====================================================
-# GOOGLE AUTH
+# SUPABASE AUTH
 # ====================================================
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"  # ✅ 전체 Drive 권한
-]
-
-service_account_info = json.loads(st.secrets["google"]["service_account"])
-credentials = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-gc = gspread.authorize(credentials)
-drive_service = build("drive", "v3", credentials=credentials)
-
-SPREADSHEET_ID = "12AuEDjFKAha32dXVres3EYasYC6TiLrEx0zTHfufJKc"
+SUPABASE_URL = st.secrets["supabase"]["url"]
+SUPABASE_KEY = st.secrets["supabase"]["key"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ====================================================
-# GOOGLE DRIVE FOLDER 자동 생성 (서비스 계정 소유)
-# ====================================================
-folder_name = "Expense_Receipts_Service"
-query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
-results = drive_service.files().list(q=query, fields="files(id)").execute()
-folders = results.get("files", [])
-
-if folders:
-    RECEIPT_FOLDER_ID = folders[0]["id"]
-else:
-    metadata = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
-    folder = drive_service.files().create(body=metadata, fields="id").execute()
-    RECEIPT_FOLDER_ID = folder["id"]
-    st.success(f"📁 Created new folder: {folder_name}")
-
-# ====================================================
-# GLOBAL STATE
+# GLOBAL SETTINGS
 # ====================================================
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
-if "active_row" not in st.session_state:
-    st.session_state.active_row = None
-if "active_mode" not in st.session_state:
-    st.session_state.active_mode = None
-
-excel_file = "expenses.xlsx"   # local backup
-receipt_folder = "receipts"
-os.makedirs(receipt_folder, exist_ok=True)
-
-# ====================================================
-# CSS (원본 유지)
-# ====================================================
-st.markdown("""
-<style>
-body { font-family: 'Segoe UI', sans-serif; }
-table, .summary-table {
-  width: 100%; border-collapse: collapse; margin-top: 10px;
-  background-color: white !important; border-radius: 8px; border: 1px solid #ccc;
-}
-th, td, .summary-table th, .summary-table td {
-  border: 1px solid #ccc; padding: 8px 10px; text-align: left; font-size: 14px;
-  vertical-align: middle; color: black;
-}
-tr:nth-child(even), .summary-table tr:nth-child(even) { background-color: #fafafa; }
-tr:hover, .summary-table tr:hover { background-color: #eef3ff; }
-</style>
-""", unsafe_allow_html=True)
+excel_file = "expenses.xlsx"
+os.makedirs("receipts", exist_ok=True)
 
 # ====================================================
 # HEADER
@@ -110,66 +57,49 @@ if receipt_file is not None:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(receipt_file.read())
         tmp.flush()
-        file_metadata = {"name": os.path.basename(receipt_file.name)}
-        media = MediaFileUpload(tmp.name, resumable=True)
-        uploaded = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-        receipt_url = f"https://drive.google.com/file/d/{uploaded.get('id')}/view?usp=sharing"
+
+        # ✅ Supabase 업로드
+        res = supabase.storage.from_("receipts").upload(receipt_name, tmp.name, {"upsert": True})
+        if res.status_code in (200, 201):
+            receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{receipt_name}"
+        else:
+            st.warning("⚠️ Supabase 업로드 실패")
 
 # ====================================================
-# SAVE BUTTON
+# SAVE RECORD
 # ====================================================
 if st.button("💾 Save Record"):
-    new_row = [str(date), category, description or "-", vendor or "-", amount, receipt_url or receipt_name]
-    try:
-        sheet = gc.open_by_key(SPREADSHEET_ID).sheet1
-        sheet.append_row(new_row)
-    except Exception as e:
-        st.warning(f"⚠️ Google Sheets 저장 실패: {e}")
-
     new_data = pd.DataFrame({
-        "Date": [date], "Category": [category], "Description": [description or "-"],
-        "Vendor": [vendor or "-"], "Amount": [amount],
-        "Receipt": [receipt_url or receipt_name]
+        "Date": [date],
+        "Category": [category],
+        "Description": [description if description else "-"],
+        "Vendor": [vendor if vendor else "-"],
+        "Amount": [amount],
+        "Receipt": [receipt_url if receipt_url else receipt_name]
     })
+
     if os.path.exists(excel_file):
         old = pd.read_excel(excel_file)
         df = pd.concat([old, new_data], ignore_index=True)
     else:
         df = new_data
-    df.to_excel(excel_file, index=False)
 
-    st.success("✅ Record saved successfully (AutoFolder Google Drive Synced)!")
+    df.to_excel(excel_file, index=False)
+    st.success("✅ Record saved successfully (Supabase Synced)!")
     time.sleep(0.5)
     st.rerun()
 
 # ====================================================
-# LOAD DATA FROM GOOGLE SHEETS (안정형)
+# DISPLAY SECTION
 # ====================================================
-try:
-    sheet = gc.open_by_key(SPREADSHEET_ID).sheet1
-    raw_values = sheet.get_all_values()
-    if not raw_values:
-        st.info("No records yet.")
-        st.stop()
-    header = raw_values[0]
-    rows = raw_values[1:]
-    df = pd.DataFrame(rows, columns=header)
-    for col in ["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]:
-        if col not in df.columns:
-            df[col] = None
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
-except Exception as e:
-    st.error(f"🚨 Google Sheets 데이터 로드 실패: {e}")
-    if os.path.exists(excel_file):
-        df = pd.read_excel(excel_file)
-    else:
-        st.stop()
+if not os.path.exists(excel_file):
+    st.info("No records yet.")
+    st.stop()
 
-# ====================================================
-# FILTERS + TABLE (원본 그대로)
-# ====================================================
+df = pd.read_excel(excel_file).fillna("-")
+df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
+
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2, f3 = st.columns([1.5, 1.5, 1])
 with f1:
@@ -187,25 +117,60 @@ if cat_filter != "All":
 if reset:
     view_df = df.copy()
 
-asc_flag = st.session_state.sort_order == "asc"
+asc_flag = True if st.session_state.sort_order == "asc" else False
 view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
-st.markdown("#### Expense Table")
-header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.2, 1.5])
-headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Actions"]
-for col, name in zip(header_cols, headers):
-    col.markdown(f"**{name}**")
+h1, h2 = st.columns([3, 1])
+with h1:
+    st.markdown(f"### 📋 Saved Records ({'⬆️ Ascending' if asc_flag else '⬇️ Descending'})")
+with h2:
+    with st.popover("📥 Download Excel"):
+        month_opt = st.selectbox("Select month to export", ["All"] + list(months))
+        export_df = df if month_opt == "All" else df[df["Month"] == month_opt]
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            export_df.to_excel(writer, index=False, sheet_name="Expenses")
+        st.download_button(
+            label=f"📤 Download {month_opt}.xlsx",
+            data=buf.getvalue(),
+            file_name=f"DuckSan_Expense_{month_opt}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
+if st.button("🔁 Toggle Sort Order"):
+    st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
+    st.rerun()
+
+# ====================================================
+# TABLE
+# ====================================================
+st.markdown("#### Expense Table")
 for i, row in view_df.iterrows():
-    cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.2, 1.5])
+    cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 2])
     cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
     cols[1].write(row["Category"])
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
     cols[4].write(f"Rp {int(row['Amount']):,}")
-    if str(row["Receipt"]).startswith("http"):
-        cols[5].markdown(f"[Open]({row['Receipt']})", unsafe_allow_html=True)
+    if row["Receipt"].startswith("http"):
+        cols[5].markdown(f"[🔗 View Receipt]({row['Receipt']})", unsafe_allow_html=True)
     else:
         cols[5].write(row["Receipt"])
 
+# ====================================================
+# SUMMARY
+# ====================================================
+st.markdown("---")
+st.subheader("📊 Summary (Filtered Data)")
+cat_sum = view_df.groupby("Category", as_index=False)["Amount"].sum()
+cat_sum["Amount"] = cat_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
+mon_sum = view_df.groupby("Month", as_index=False)["Amount"].sum()
+mon_sum["Amount"] = mon_sum["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
+c1, c2 = st.columns(2)
+with c1:
+    st.write("**By Category**")
+    st.dataframe(cat_sum)
+with c2:
+    st.write("**By Month**")
+    st.dataframe(mon_sum)
