@@ -17,19 +17,19 @@ from supabase import create_client
 st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 
 # ====================================================
-# SUPABASE AUTH
+# SUPABASE AUTH (이미 st.secrets에 세팅되어 있어야 함)
 # ====================================================
 SUPABASE_URL = st.secrets["supabase"]["url"]
 SUPABASE_KEY = st.secrets["supabase"]["key"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ====================================================
-# STATE
+# STATE 초기화
 # ====================================================
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
 if "active_row" not in st.session_state:
-    st.session_state.active_row = None
+    st.session_state.active_row = None  # 실제 df의 인덱스 값 저장
 if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 
@@ -37,7 +37,7 @@ excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
 
 # ====================================================
-# FILE UPLOAD HELPER
+# 업로드 헬퍼 (간단 안정형)
 # ====================================================
 def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
     mime_type, _ = mimetypes.guess_type(file_name)
@@ -51,7 +51,6 @@ def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
                 f,
                 {"cache-control": "3600", "upsert": "true", "content-type": mime_type}
             )
-        st.toast("✅ Uploaded to Supabase")
         return res
     except Exception as e:
         st.error(f"🚨 업로드 중 오류: {e}")
@@ -93,6 +92,9 @@ if receipt_file is not None:
             receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{unique_name}"
     receipt_name = unique_name
 
+# ====================================================
+# SAVE RECORD (추가)
+# ====================================================
 if st.button("💾 Save Record"):
     new_data = pd.DataFrame({
         "Date": [date],
@@ -104,25 +106,29 @@ if st.button("💾 Save Record"):
     })
     if os.path.exists(excel_file):
         old = pd.read_excel(excel_file)
-        df = pd.concat([old, new_data], ignore_index=True)
+        df_all = pd.concat([old, new_data], ignore_index=True)
     else:
-        df = new_data
-    df.to_excel(excel_file, index=False)
+        df_all = new_data
+    df_all.to_excel(excel_file, index=False)
     st.success("✅ Record saved successfully (Supabase Synced)!")
-    time.sleep(0.5)
+    time.sleep(0.4)
     st.rerun()
 
 # ====================================================
-# DISPLAY SECTION
+# DISPLAY / DATA 로드
 # ====================================================
 if not os.path.exists(excel_file):
     st.info("No records yet.")
     st.stop()
 
+# 원본 df (인덱스 유지)
 df = pd.read_excel(excel_file).fillna("-")
+# 날짜형으로 변환
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+# Month 컬럼
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
+# 필터 UI
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2, f3 = st.columns([1.5, 1.5, 1])
 with f1:
@@ -130,57 +136,130 @@ with f1:
 with f2:
     cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
 with f3:
-    reset = st.button("🔄 Reset Filters")
+    if st.button("🔄 Reset Filters"):
+        month_filter = "All"
+        cat_filter = "All"
 
 view_df = df.copy()
 if month_filter != "All":
     view_df = view_df[view_df["Month"] == month_filter]
 if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
-if reset:
-    view_df = df.copy()
 
 asc_flag = True if st.session_state.sort_order == "asc" else False
-view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
+view_df = view_df.sort_values("Date", ascending=asc_flag)
+
+# reset_index해서 원본 인덱스 컬럼 보관
+view_df_reset = view_df.reset_index()  # 컬럼 'index' 에 원 df 인덱스가 들어있음
 
 # ====================================================
-# SAVED RECORDS SECTION (with Header)
+# SAVED RECORDS (헤더 표시)
 # ====================================================
 st.markdown("### 📋 Saved Records")
 
-# === 테이블 헤더 표시 ===
 header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
 headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Actions"]
 for col, name in zip(header_cols, headers):
     col.markdown(f"**{name}**")
 
-# === 데이터 행 표시 ===
-for i, row in view_df.iterrows():
+# ====================================================
+# 데이터 행 반복 (각 행마다 버튼 및 인라인 편집/미리보기)
+# ====================================================
+categories_list = ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
+
+for i, row in view_df_reset.iterrows():
+    original_idx = int(row["index"])  # 원본 df 인덱스
     cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
+
+    # 표시
     cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
     cols[1].write(row["Category"])
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
     cols[4].write(f"Rp {int(row['Amount']):,}")
+    # receipt 링크 또는 파일명 표시
     cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else row["Receipt"], unsafe_allow_html=True)
 
+    # 버튼들
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("🧾", key=f"view_{i}"):
-                st.session_state.active_row, st.session_state.active_mode = i, "view"
+            if st.button("🧾", key=f"view_{original_idx}"):
+                st.session_state.active_row = original_idx
+                st.session_state.active_mode = "view"
                 st.rerun()
         with c2:
-            if st.button("✏️", key=f"edit_{i}"):
-                st.session_state.active_row, st.session_state.active_mode = i, "edit"
+            if st.button("✏️", key=f"edit_{original_idx}"):
+                st.session_state.active_row = original_idx
+                st.session_state.active_mode = "edit"
                 st.rerun()
         with c3:
-            if st.button("🗑️", key=f"del_{i}"):
-                df = df.drop(view_df.index[i])
+            if st.button("🗑️", key=f"del_{original_idx}"):
+                # 삭제: 원본 df에서 인덱스 기준으로 삭제
+                df = df.drop(index=original_idx)
                 df.to_excel(excel_file, index=False)
                 st.success("🗑️ Deleted!")
-                time.sleep(0.5)
+                time.sleep(0.4)
                 st.rerun()
+
+    # === 확장 섹션: 활성 행이면 아래에 펼쳐짐 ===
+    if st.session_state.active_row == original_idx:
+        st.markdown("---")
+        if st.session_state.active_mode == "view":
+            st.subheader("🧾 Receipt Preview")
+            receipt_link = df.at[original_idx, "Receipt"] if original_idx in df.index else row["Receipt"]
+            if str(receipt_link).startswith("http"):
+                if receipt_link.lower().endswith((".png", ".jpg", ".jpeg")):
+                    st.image(receipt_link, width=500)
+                elif receipt_link.lower().endswith(".pdf"):
+                    st.markdown(f"[📄 Open PDF]({receipt_link})", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"[🔗 Open File]({receipt_link})", unsafe_allow_html=True)
+            else:
+                st.warning("⚠️ No valid receipt link found.")
+            if st.button("Close", key=f"close_view_{original_idx}"):
+                st.session_state.active_row = None
+                st.session_state.active_mode = None
+                st.rerun()
+
+        elif st.session_state.active_mode == "edit":
+            st.subheader("✏️ Edit Record")
+            # 원본 데이터 로드 (안정성: df가 최신인지 확인)
+            cur_row = df.loc[original_idx]
+            # 날짜 기본값 처리
+            cur_date = cur_row["Date"] if pd.notna(cur_row["Date"]) else datetime.today()
+            new_date = st.date_input("Date", value=cur_date, key=f"date_{original_idx}")
+            # category select (현재 카테고리 인덱스 찾기)
+            try:
+                default_cat_idx = categories_list.index(cur_row["Category"])
+            except Exception:
+                default_cat_idx = 0
+            new_cat = st.selectbox("Category", categories_list, index=default_cat_idx, key=f"cat_{original_idx}")
+            new_desc = st.text_input("Description", value=cur_row["Description"], key=f"desc_{original_idx}")
+            new_vendor = st.text_input("Vendor", value=cur_row["Vendor"], key=f"ven_{original_idx}")
+            new_amt = st.number_input("Amount (Rp)", value=float(cur_row["Amount"]), key=f"amt_{original_idx}")
+
+            c4, c5 = st.columns(2)
+            with c4:
+                if st.button("💾 Save", key=f"save_{original_idx}"):
+                    # 업데이트: df의 해당 인덱스 바로 수정
+                    df.at[original_idx, "Date"] = pd.to_datetime(new_date)
+                    df.at[original_idx, "Category"] = new_cat
+                    df.at[original_idx, "Description"] = new_desc
+                    df.at[original_idx, "Vendor"] = new_vendor
+                    df.at[original_idx, "Amount"] = new_amt
+                    # 저장
+                    df.to_excel(excel_file, index=False)
+                    st.success("✅ Updated!")
+                    st.session_state.active_row = None
+                    st.session_state.active_mode = None
+                    time.sleep(0.4)
+                    st.rerun()
+            with c5:
+                if st.button("Cancel", key=f"cancel_{original_idx}"):
+                    st.session_state.active_row = None
+                    st.session_state.active_mode = None
+                    st.rerun()
 
 # ====================================================
 # SUMMARY SECTION (MONTH & CATEGORY)
@@ -190,11 +269,16 @@ st.markdown("### 📊 Monthly / Category Summary")
 
 summary_col1, summary_col2 = st.columns([1.5, 2])
 with summary_col1:
-    month_select = st.selectbox("📆 Select Month", list(months))
+    # month_select 기본값: 현재 선택한 month_filter이 All이 아니면 그것을, 아니면 첫 달 선택
+    month_default = month_filter if month_filter != "All" else (months[0] if months else None)
+    month_select = st.selectbox("📆 Select Month", ["All"] + list(months), index=0 if month_default is None or month_default == "All" else (["All"]+list(months)).index(month_default))
 with summary_col2:
     cat_select = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()))
 
-summary_df = df[df["Month"] == month_select]
+# 집계 계산
+summary_df = df.copy()
+if month_select != "All":
+    summary_df = summary_df[summary_df["Month"] == month_select]
 if cat_select != "All":
     summary_df = summary_df[summary_df["Category"] == cat_select]
 
