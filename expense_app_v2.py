@@ -296,7 +296,7 @@ for _, row in view_df.iterrows():
                     st.rerun()
 
 # ====================================================
-# SUMMARY SECTION (수정됨)
+# SUMMARY SECTION (거래 전체 표시 버전)
 # ====================================================
 st.markdown("---")
 st.subheader("📊 Monthly & Category Summary")
@@ -318,15 +318,17 @@ if summary_df.empty:
 else:
     count = len(summary_df)
     total = summary_df["Amount"].sum()
-    st.success(f"📌 {month_summary if month_summary!='All' else 'All months'} | "
-               f"{cat_summary if cat_summary!='All' else 'All categories'} → "
-               f"{count} transactions, Rp {int(total):,}")
+    st.success(
+        f"📌 {month_summary if month_summary!='All' else 'All months'} | "
+        f"{cat_summary if cat_summary!='All' else 'All categories'} → "
+        f"{count} transactions, Rp {int(total):,}"
+    )
 
-    # ✅ 정확한 그룹 조건
-    if cat_summary == "All":
-        grouped = summary_df.groupby(["Category", "Vendor"], as_index=False)["Amount"].sum()
-    else:
-        grouped = summary_df.groupby(["Vendor"], as_index=False)["Amount"].sum()
+    # ✅ 원본 거래 내역 그대로 표시
+    display_df = summary_df[["Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]].copy()
+    display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
+    display_df["Amount"] = display_df["Amount"].apply(lambda x: f"Rp {int(x):,}")
 
-    grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
-    st.dataframe(grouped, use_container_width=True)
+    st.dataframe(display_df, use_container_width=True)
+
+
