@@ -28,28 +28,27 @@ except Exception as e:
 # ==========================
 # 📊 Google Sheets / Drive 설정
 # ==========================
-SPREADSHEET_NAME = "Expense Records"   # ✅ 시트 이름 정확히 반영
+SPREADSHEET_ID = "12AuEDjFKAha32dXVres3EYasYC6TiLrEx0zTHfufJKc"   # ✅ 실제 시트 ID 기반
 RECEIPT_FOLDER_ID = "1LrpOrq1GWnH-PweYuC8Bk6wKogiTesD_"
 
-# 시트 열기 시 예외 처리
 try:
-    sheet = gc.open(SPREADSHEET_NAME).sheet1
+    sheet = gc.open_by_key(SPREADSHEET_ID).sheet1
 except Exception as e:
-    st.error(f"🚨 Google Sheets 접근 실패: '{SPREADSHEET_NAME}' 시트를 찾을 수 없습니다.")
+    st.error(f"🚨 Google Sheets 접근 실패: ID '{SPREADSHEET_ID}' 시트를 찾을 수 없습니다.")
     st.info("""
     👉 확인하세요:
-    1. Google Sheets 이름이 정확히 "Expense Records" 인가요?
-    2. 서비스 계정 이메일(`streamlit-expense@ducksanexpensemanage.iam.gserviceaccount.com`)을
-       편집자 권한으로 공유했나요?
-    3. Streamlit Secrets의 서비스 계정 JSON이 올바른가요?
+    1. 서비스 계정 이메일(streamlit-expense@ducksanexpensemanage.iam.gserviceaccount.com)을
+       편집자 권한으로 이 시트에 공유했나요?
+    2. Streamlit Secrets의 JSON이 정확한가요?
+    3. 시트 ID가 올바른가요?
     """)
     st.stop()
 
 # ==========================
-# 🌈 Streamlit 기본 UI
+# 🌈 Streamlit UI
 # ==========================
-st.set_page_config(page_title="지출결의서 v43.4", layout="wide")
-st.title("💰 지출결의서 v43.4 (Google Sheets + Drive 안정버전)")
+st.set_page_config(page_title="지출결의서 v43.5", layout="wide")
+st.title("💰 지출결의서 v43.5 (Google Sheets ID 직접 연결 버전)")
 
 # ==========================
 # 📥 데이터 불러오기
@@ -58,7 +57,7 @@ try:
     records = sheet.get_all_records()
     df = pd.DataFrame(records)
 except Exception as e:
-    st.error("🚨 시트 데이터 로딩 실패. 시트 구조나 권한을 확인하세요.")
+    st.error("🚨 시트 데이터 로딩 실패. 권한 또는 시트 구조를 확인하세요.")
     st.stop()
 
 if not df.empty:
@@ -121,7 +120,6 @@ with st.expander("➕ 새 결의서 추가", expanded=True):
             st.success("✅ Google Sheets & Drive 저장 완료!")
             st.balloons()
             st.experimental_rerun()
-
         except Exception as e:
             st.error(f"🚨 저장 중 오류 발생: {e}")
 
@@ -182,4 +180,3 @@ if not df.empty:
         st.dataframe(category_summary, use_container_width=True)
 else:
     st.warning("시트에 데이터가 없습니다.")
-
