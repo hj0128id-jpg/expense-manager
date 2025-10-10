@@ -110,7 +110,7 @@ if receipt_file is not None:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(receipt_file.read())
         tmp.flush()
-        file_metadata = {"name": os.path.basename(receipt_file.name)
+        file_metadata = {"name": os.path.basename(receipt_file.name)}
         media = MediaFileUpload(tmp.name, resumable=True)
         uploaded = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()
         receipt_url = f"https://drive.google.com/file/d/{uploaded.get('id')}/view?usp=sharing"
@@ -207,4 +207,5 @@ for i, row in view_df.iterrows():
         cols[5].markdown(f"[Open]({row['Receipt']})", unsafe_allow_html=True)
     else:
         cols[5].write(row["Receipt"])
+
 
