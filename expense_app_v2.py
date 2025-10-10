@@ -1,57 +1,61 @@
 import streamlit as st
 import pandas as pd
-import gspread
+import json
 from google.oauth2.service_account import Credentials
+import gspread
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import tempfile
 from datetime import datetime
 
 # ==========================
-# 🔐 인증
+# 🔐 GOOGLE AUTH (Secrets 기반)
 # ==========================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file"
 ]
-SERVICE_ACCOUNT_FILE = "service_account.json"
 
-credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+service_account_info = json.loads(st.secrets["google"]["service_account"])
+credentials = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 gc = gspread.authorize(credentials)
 drive_service = build("drive", "v3", credentials=credentials)
 
 # ==========================
-# 📊 시트/드라이브
+# 📊 Google Sheets / Drive 설정
 # ==========================
 SPREADSHEET_NAME = "Expense_Records"
 RECEIPT_FOLDER_ID = "1LrpOrq1GWnH-PweYuC8Bk6wKogiTesD_"
-
 sheet = gc.open(SPREADSHEET_NAME).sheet1
+
+# ==========================
+# 🌈 Streamlit 기본 UI
+# ==========================
+st.set_page_config(page_title="지출결의서 v43.3", layout="wide")
+st.title("💰 지출결의서 v43.3 (Google Sheets + Drive 완전 자동화)")
+
+# ==========================
+# 📥 데이터 불러오기
+# ==========================
 records = sheet.get_all_records()
 df = pd.DataFrame(records)
-
-# ==========================
-# 🎨 UI 기본 설정
-# ==========================
-st.set_page_config(page_title="지출결의서 v43.2", layout="wide")
-st.title("💰 지출결의서 v43.2 (수정·삭제·필터링 완전 자동화)")
 
 if not df.empty:
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 
 # ==========================
-# 🔍 필터 / 검색
+# 🔍 필터
 # ==========================
 st.sidebar.header("🔎 필터")
-selected_month = st.sidebar.selectbox(
-    "월 선택",
-    ["전체"] + sorted(df["Date"].dt.to_period("M").astype(str).unique().tolist())
-)
-selected_category = st.sidebar.selectbox(
-    "카테고리 선택",
-    ["전체"] + sorted(df["Category"].dropna().unique().tolist())
-)
+if not df.empty:
+    months = ["전체"] + sorted(df["Date"].dt.to_period("M").astype(str).unique().tolist())
+    categories = ["전체"] + sorted(df["Category"].dropna().unique().tolist())
+else:
+    months, categories = ["전체"], ["전체"]
+
+selected_month = st.sidebar.selectbox("월 선택", months)
+selected_category = st.sidebar.selectbox("카테고리 선택", categories)
 
 filtered_df = df.copy()
 if selected_month != "전체":
@@ -60,15 +64,15 @@ if selected_category != "전체":
     filtered_df = filtered_df[filtered_df["Category"] == selected_category]
 
 # ==========================
-# 🧾 입력 폼
+# 🧾 새 결의서 입력
 # ==========================
 with st.expander("➕ 새 결의서 추가", expanded=True):
     with st.form("expense_form"):
         date = st.date_input("날짜", value=datetime.today())
         category = st.text_input("카테고리")
         description = st.text_input("내용")
-        amount = st.number_input("금액", min_value=0)
-        receipt = st.file_uploader("영수증 업로드 (JPG, PNG, PDF)", type=["jpg","jpeg","png","pdf"])
+        amount = st.number_input("금액 (Rp)", min_value=0)
+        receipt = st.file_uploader("영수증 업로드 (JPG, PNG, PDF)", type=["jpg", "jpeg", "png", "pdf"])
         submitted = st.form_submit_button("저장")
 
     if submitted:
@@ -83,7 +87,9 @@ with st.expander("➕ 새 결의서 추가", expanded=True):
                 }
                 media = MediaFileUpload(tmp.name, mimetype=receipt.type)
                 uploaded = drive_service.files().create(
-                    body=file_metadata, media_body=media, fields="id"
+                    body=file_metadata,
+                    media_body=media,
+                    fields="id"
                 ).execute()
                 file_id = uploaded.get("id")
                 receipt_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
@@ -91,12 +97,13 @@ with st.expander("➕ 새 결의서 추가", expanded=True):
         new_row = [str(date), category, description, amount, receipt_url]
         sheet.append_row(new_row)
         st.success("✅ Google Sheets & Drive 저장 완료!")
+        st.balloons()
         st.experimental_rerun()
 
 # ==========================
-# 🧹 수정 / 삭제 기능
+# 🗂 수정 / 삭제
 # ==========================
-st.subheader("📋 결의서 내역 (수정/삭제 가능)")
+st.subheader("📋 저장된 결의서 내역 (수정/삭제 가능)")
 
 if not filtered_df.empty:
     for i, row in filtered_df.iterrows():
@@ -121,7 +128,7 @@ if not filtered_df.empty:
                     st.warning("삭제 완료 🗑")
                     st.experimental_rerun()
 else:
-    st.info("선택된 조건에 맞는 데이터가 없습니다.")
+    st.info("필터에 맞는 데이터가 없습니다.")
 
 # ==========================
 # 📊 요약
@@ -141,3 +148,6 @@ if not df.empty:
     with col2:
         st.write("**카테고리별 합계 (Rp)**")
         st.dataframe(category_summary, use_container_width=True)
+else:
+    st.warning("시트에 데이터가 없습니다.")
+
