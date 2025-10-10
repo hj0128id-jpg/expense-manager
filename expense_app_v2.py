@@ -94,6 +94,16 @@ def load_and_ensure_ids(excel_path):
     base_cols = ["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]
     if not os.path.exists(excel_path):
         return pd.DataFrame(columns=base_cols)
+        # ✅ Clean up: 완전 빈 행 / Amount 0행 제거
+try:
+    temp_df = pd.read_excel(excel_file)
+    temp_df = temp_df.dropna(how="all")  # 전부 NaN인 행 제거
+    temp_df = temp_df[~((temp_df["Amount"].fillna(0) == 0) &
+                        (temp_df["Description"].isin(["-", "", None])) &
+                        (temp_df["Category"].isin(["-", "", None])))]
+    temp_df.to_excel(excel_file, index=False)
+except Exception:
+    pass
     df = pd.read_excel(excel_path).fillna("-")
     if "Receipt" in df.columns and "Receipt_url" not in df.columns:
         df = df.rename(columns={"Receipt": "Receipt_url"})
@@ -353,3 +363,4 @@ else:
     display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
     display_df["Amount"] = display_df["Amount"].apply(lambda x: f"Rp {int(x):,}")
     st.dataframe(display_df, use_container_width=True)
+
