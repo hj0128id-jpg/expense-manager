@@ -276,20 +276,44 @@ else:
     st.dataframe(grouped, use_container_width=True)
 
 # ====================================================
-# 📥 DOWNLOAD BACKUP EXCEL (복원)
+# 📥 DOWNLOAD FILTERED EXCEL (업그레이드 버전)
 # ====================================================
 st.markdown("---")
-st.subheader("📥 Download Backup Excel")
+st.subheader("📥 Download Filtered Excel")
 
 if os.path.exists(excel_file):
+    # 다운로드 옵션 선택
+    st.write("원하는 기간의 데이터를 선택 후 다운로드하세요 👇")
+
+    download_col1, download_col2 = st.columns([1.5, 2])
+    with download_col1:
+        month_opt = st.selectbox("📅 Select Month", ["All"] + list(months))
+    with download_col2:
+        st.write(" ")  # 여백용
+
+    # 선택한 월에 따라 데이터 필터링
+    if month_opt == "All":
+        export_df = df.copy()
+        label = "📤 Download All Records (.xlsx)"
+        fname = f"expenses_all_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
+    else:
+        export_df = df[df["Month"] == month_opt].copy()
+        label = f"📤 Download {month_opt}.xlsx"
+        fname = f"expenses_{month_opt}.xlsx"
+
+    # 다운로드 준비
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Expenses")
+        export_df.to_excel(writer, index=False, sheet_name="Expenses")
+
+    # 다운로드 버튼 표시
     st.download_button(
-        label="💾 Download current expenses.xlsx",
+        label=label,
         data=buf.getvalue(),
-        file_name=f"expenses_{datetime.today().strftime('%Y-%m-%d')}.xlsx",
+        file_name=fname,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 else:
     st.warning("⚠️ No expenses.xlsx file found to download.")
+
+
