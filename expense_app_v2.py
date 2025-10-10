@@ -16,29 +16,50 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file"
 ]
 
-service_account_info = json.loads(st.secrets["google"]["service_account"])
-credentials = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-gc = gspread.authorize(credentials)
-drive_service = build("drive", "v3", credentials=credentials)
+try:
+    service_account_info = json.loads(st.secrets["google"]["service_account"])
+    credentials = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+    gc = gspread.authorize(credentials)
+    drive_service = build("drive", "v3", credentials=credentials)
+except Exception as e:
+    st.error(f"🚨 Google 인증 실패: {e}")
+    st.stop()
 
 # ==========================
 # 📊 Google Sheets / Drive 설정
 # ==========================
-SPREADSHEET_NAME = "Expense Records"
+SPREADSHEET_NAME = "Expense Records"   # ✅ 시트 이름 정확히 반영
 RECEIPT_FOLDER_ID = "1LrpOrq1GWnH-PweYuC8Bk6wKogiTesD_"
-sheet = gc.open("Expense Records").sheet1
+
+# 시트 열기 시 예외 처리
+try:
+    sheet = gc.open(SPREADSHEET_NAME).sheet1
+except Exception as e:
+    st.error(f"🚨 Google Sheets 접근 실패: '{SPREADSHEET_NAME}' 시트를 찾을 수 없습니다.")
+    st.info("""
+    👉 확인하세요:
+    1. Google Sheets 이름이 정확히 "Expense Records" 인가요?
+    2. 서비스 계정 이메일(`streamlit-expense@ducksanexpensemanage.iam.gserviceaccount.com`)을
+       편집자 권한으로 공유했나요?
+    3. Streamlit Secrets의 서비스 계정 JSON이 올바른가요?
+    """)
+    st.stop()
 
 # ==========================
 # 🌈 Streamlit 기본 UI
 # ==========================
-st.set_page_config(page_title="지출결의서 v43.3", layout="wide")
-st.title("💰 지출결의서 v43.3 (Google Sheets + Drive 완전 자동화)")
+st.set_page_config(page_title="지출결의서 v43.4", layout="wide")
+st.title("💰 지출결의서 v43.4 (Google Sheets + Drive 안정버전)")
 
 # ==========================
 # 📥 데이터 불러오기
 # ==========================
-records = sheet.get_all_records()
-df = pd.DataFrame(records)
+try:
+    records = sheet.get_all_records()
+    df = pd.DataFrame(records)
+except Exception as e:
+    st.error("🚨 시트 데이터 로딩 실패. 시트 구조나 권한을 확인하세요.")
+    st.stop()
 
 if not df.empty:
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
@@ -77,28 +98,32 @@ with st.expander("➕ 새 결의서 추가", expanded=True):
 
     if submitted:
         receipt_url = ""
-        if receipt:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                tmp.write(receipt.read())
-                tmp.flush()
-                file_metadata = {
-                    "name": f"{date}_{receipt.name}",
-                    "parents": [RECEIPT_FOLDER_ID]
-                }
-                media = MediaFileUpload(tmp.name, mimetype=receipt.type)
-                uploaded = drive_service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields="id"
-                ).execute()
-                file_id = uploaded.get("id")
-                receipt_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+        try:
+            if receipt:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    tmp.write(receipt.read())
+                    tmp.flush()
+                    file_metadata = {
+                        "name": f"{date}_{receipt.name}",
+                        "parents": [RECEIPT_FOLDER_ID]
+                    }
+                    media = MediaFileUpload(tmp.name, mimetype=receipt.type)
+                    uploaded = drive_service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields="id"
+                    ).execute()
+                    file_id = uploaded.get("id")
+                    receipt_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
 
-        new_row = [str(date), category, description, amount, receipt_url]
-        sheet.append_row(new_row)
-        st.success("✅ Google Sheets & Drive 저장 완료!")
-        st.balloons()
-        st.experimental_rerun()
+            new_row = [str(date), category, description, amount, receipt_url]
+            sheet.append_row(new_row)
+            st.success("✅ Google Sheets & Drive 저장 완료!")
+            st.balloons()
+            st.experimental_rerun()
+
+        except Exception as e:
+            st.error(f"🚨 저장 중 오류 발생: {e}")
 
 # ==========================
 # 🗂 수정 / 삭제
@@ -117,16 +142,23 @@ if not filtered_df.empty:
                 new_date = st.date_input(f"날짜_{i}", value=row["Date"].date())
             with c3:
                 if st.button(f"💾 수정", key=f"edit_{i}"):
-                    sheet.update_cell(i + 2, 1, str(new_date))
-                    sheet.update_cell(i + 2, 2, new_cat)
-                    sheet.update_cell(i + 2, 3, new_desc)
-                    sheet.update_cell(i + 2, 4, new_amt)
-                    st.success("수정 완료 ✅")
-                    st.experimental_rerun()
+                    try:
+                        sheet.update_cell(i + 2, 1, str(new_date))
+                        sheet.update_cell(i + 2, 2, new_cat)
+                        sheet.update_cell(i + 2, 3, new_desc)
+                        sheet.update_cell(i + 2, 4, new_amt)
+                        st.success("수정 완료 ✅")
+                        st.experimental_rerun()
+                    except Exception as e:
+                        st.error(f"수정 실패: {e}")
+
                 if st.button(f"🗑 삭제", key=f"del_{i}"):
-                    sheet.delete_rows(i + 2)
-                    st.warning("삭제 완료 🗑")
-                    st.experimental_rerun()
+                    try:
+                        sheet.delete_rows(i + 2)
+                        st.warning("삭제 완료 🗑")
+                        st.experimental_rerun()
+                    except Exception as e:
+                        st.error(f"삭제 실패: {e}")
 else:
     st.info("필터에 맞는 데이터가 없습니다.")
 
@@ -150,7 +182,3 @@ if not df.empty:
         st.dataframe(category_summary, use_container_width=True)
 else:
     st.warning("시트에 데이터가 없습니다.")
-
-
-
-
