@@ -23,12 +23,14 @@ SUPABASE_KEY = st.secrets["supabase"]["key"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ====================================================
-# SESSION STATE 초기화
+# SESSION STATE
 # ====================================================
 if "active_row" not in st.session_state:
     st.session_state.active_row = None
 if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
+if "sort_order" not in st.session_state:
+    st.session_state.sort_order = "desc"  # 기본 최신순
 
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
@@ -105,12 +107,14 @@ def load_and_ensure_ids(excel_path):
     return df
 
 # ====================================================
-# Supabase → Excel (자동 병합)
+# SYNC FUNCTIONS
 # ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
         res = supabase.table("expense-data").select("*").execute()
-        supa_data = pd.DataFrame(res.data if res.data else [])
+        import json
+        data = json.loads(res.json())
+        supa_data = pd.DataFrame(data if data else [])
         if supa_data.empty:
             return
         if "Date" in supa_data.columns:
@@ -128,9 +132,6 @@ def sync_supabase_to_excel(excel_path):
     except Exception:
         pass
 
-# ====================================================
-# Excel → Supabase (자동 업로드)
-# ====================================================
 def sync_excel_to_supabase(df):
     try:
         df = df.copy()
@@ -165,11 +166,17 @@ if st.button("💾 Save Record"):
         df_all = pd.concat([old_df, new_df], ignore_index=True)
     else:
         df_all = new_df
+
+    # ✅ 항상 최신순으로 정렬 저장
+    df_all["Date"] = pd.to_datetime(df_all["Date"], errors="coerce")
+    df_all = df_all.sort_values("Date", ascending=False)
     df_all.to_excel(excel_file, index=False)
+
     try:
         supabase.table("expense-data").upsert(new_data).execute()
     except Exception:
         pass
+
     time.sleep(0.4)
     st.rerun()
 
@@ -201,13 +208,28 @@ if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
 
 # ====================================================
-# RECORD TABLE
+# SAVED RECORDS (정렬버튼 포함)
 # ====================================================
 st.markdown("### 📋 Saved Records")
 header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
-for c, h in zip(header_cols, ["Date", "Category", "Description", "Vendor", "Amount", "Receipt_url", "Actions"]):
+
+# 정렬 버튼
+with header_cols[0]:
+    sort_icon = "⬇️" if st.session_state.sort_order == "desc" else "⬆️"
+    if st.button(f"📅 Date {sort_icon}"):
+        st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
+        st.rerun()
+
+for c, h in zip(header_cols[1:], ["Category", "Description", "Vendor", "Amount", "Receipt_url", "Actions"]):
     c.markdown(f"**{h}**")
 
+# 정렬 적용
+ascending_flag = True if st.session_state.sort_order == "asc" else False
+view_df = view_df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
+
+# ====================================================
+# RECORD DISPLAY
+# ====================================================
 df["id"] = df["id"].astype(str)
 for _, row in view_df.iterrows():
     row_id = str(row["id"])
@@ -221,6 +243,7 @@ for _, row in view_df.iterrows():
     link = row.get("Receipt_url", "-")
     cols[5].markdown(f"[🔗 View]({link})" if str(link).startswith("http") else "-", unsafe_allow_html=True)
 
+    # Actions
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -244,6 +267,7 @@ for _, row in view_df.iterrows():
                 time.sleep(0.4)
                 st.rerun()
 
+    # Active Row: View / Edit
     if st.session_state.active_row == row_id:
         st.markdown("---")
         if st.session_state.active_mode == "view":
@@ -324,41 +348,8 @@ else:
         f"{count} transactions, Rp {int(total):,}"
     )
 
-    # ✅ 원본 거래 내역 그대로 표시
+    # ✅ 모든 거래 내역 그대로 표시
     display_df = summary_df[["Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]].copy()
     display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
     display_df["Amount"] = display_df["Amount"].apply(lambda x: f"Rp {int(x):,}")
-
     st.dataframe(display_df, use_container_width=True)
-
-# ==============================================
-# ⚙️ Supabase → Excel 강제 동기화 (완전 안전버전)
-# ==============================================
-import pandas as pd
-import os
-from supabase import create_client
-
-try:
-    SUPABASE_URL = st.secrets["supabase"]["url"]
-    SUPABASE_KEY = st.secrets["supabase"]["key"]
-except Exception as e:
-    st.error("🚨 st.secrets['supabase'] 설정이 없습니다. Streamlit Cloud Secrets 확인하세요.")
-    st.stop()
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-excel_path = os.path.join(os.getcwd(), "expenses.xlsx")
-
-try:
-    res = supabase.table("expense-data").select("*").execute()
-    supa_data = pd.DataFrame(res.data if res.data else [])
-    if supa_data.empty:
-        st.info("ℹ️ Supabase에 데이터가 없습니다.")
-    else:
-        supa_data.to_excel(excel_path, index=False)
-        st.success(f"✅ Synced {len(supa_data)} records from Supabase → {excel_path}")
-except Exception as e:
-    st.error(f"⚠️ Sync failed: {e}")
-
-
-
-
