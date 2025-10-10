@@ -29,7 +29,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
 if "active_row" not in st.session_state:
-    st.session_state.active_row = None  # 실제 df의 인덱스 값 저장
+    st.session_state.active_row = None
 if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 
@@ -121,14 +121,10 @@ if not os.path.exists(excel_file):
     st.info("No records yet.")
     st.stop()
 
-# 원본 df (인덱스 유지)
 df = pd.read_excel(excel_file).fillna("-")
-# 날짜형으로 변환
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-# Month 컬럼
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
-# 필터 UI
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2, f3 = st.columns([1.5, 1.5, 1])
 with f1:
@@ -148,12 +144,10 @@ if cat_filter != "All":
 
 asc_flag = True if st.session_state.sort_order == "asc" else False
 view_df = view_df.sort_values("Date", ascending=asc_flag)
-
-# reset_index해서 원본 인덱스 컬럼 보관
-view_df_reset = view_df.reset_index()  # 컬럼 'index' 에 원 df 인덱스가 들어있음
+view_df_reset = view_df.reset_index()
 
 # ====================================================
-# SAVED RECORDS (헤더 표시)
+# SAVED RECORDS
 # ====================================================
 st.markdown("### 📋 Saved Records")
 
@@ -162,25 +156,18 @@ headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Ac
 for col, name in zip(header_cols, headers):
     col.markdown(f"**{name}**")
 
-# ====================================================
-# 데이터 행 반복 (각 행마다 버튼 및 인라인 편집/미리보기)
-# ====================================================
 categories_list = ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
 
 for i, row in view_df_reset.iterrows():
-    original_idx = int(row["index"])  # 원본 df 인덱스
+    original_idx = int(row["index"])
     cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
-
-    # 표시
     cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
     cols[1].write(row["Category"])
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
     cols[4].write(f"Rp {int(row['Amount']):,}")
-    # receipt 링크 또는 파일명 표시
     cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else row["Receipt"], unsafe_allow_html=True)
 
-    # 버튼들
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -195,14 +182,12 @@ for i, row in view_df_reset.iterrows():
                 st.rerun()
         with c3:
             if st.button("🗑️", key=f"del_{original_idx}"):
-                # 삭제: 원본 df에서 인덱스 기준으로 삭제
                 df = df.drop(index=original_idx)
                 df.to_excel(excel_file, index=False)
                 st.success("🗑️ Deleted!")
                 time.sleep(0.4)
                 st.rerun()
 
-    # === 확장 섹션: 활성 행이면 아래에 펼쳐짐 ===
     if st.session_state.active_row == original_idx:
         st.markdown("---")
         if st.session_state.active_mode == "view":
@@ -224,12 +209,9 @@ for i, row in view_df_reset.iterrows():
 
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
-            # 원본 데이터 로드 (안정성: df가 최신인지 확인)
             cur_row = df.loc[original_idx]
-            # 날짜 기본값 처리
             cur_date = cur_row["Date"] if pd.notna(cur_row["Date"]) else datetime.today()
             new_date = st.date_input("Date", value=cur_date, key=f"date_{original_idx}")
-            # category select (현재 카테고리 인덱스 찾기)
             try:
                 default_cat_idx = categories_list.index(cur_row["Category"])
             except Exception:
@@ -242,13 +224,11 @@ for i, row in view_df_reset.iterrows():
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{original_idx}"):
-                    # 업데이트: df의 해당 인덱스 바로 수정
                     df.at[original_idx, "Date"] = pd.to_datetime(new_date)
                     df.at[original_idx, "Category"] = new_cat
                     df.at[original_idx, "Description"] = new_desc
                     df.at[original_idx, "Vendor"] = new_vendor
                     df.at[original_idx, "Amount"] = new_amt
-                    # 저장
                     df.to_excel(excel_file, index=False)
                     st.success("✅ Updated!")
                     st.session_state.active_row = None
@@ -262,20 +242,23 @@ for i, row in view_df_reset.iterrows():
                     st.rerun()
 
 # ====================================================
-# SUMMARY SECTION (MONTH & CATEGORY)
+# SUMMARY SECTION
 # ====================================================
 st.markdown("---")
 st.markdown("### 📊 Monthly / Category Summary")
 
 summary_col1, summary_col2 = st.columns([1.5, 2])
 with summary_col1:
-    # month_select 기본값: 현재 선택한 month_filter이 All이 아니면 그것을, 아니면 첫 달 선택
     month_default = month_filter if month_filter != "All" else (months[0] if months else None)
-    month_select = st.selectbox("📆 Select Month", ["All"] + list(months), index=0 if month_default is None or month_default == "All" else (["All"]+list(months)).index(month_default))
+    month_select = st.selectbox(
+        "📆 Select Month",
+        ["All"] + list(months),
+        index=0 if month_default is None or month_default == "All"
+        else (["All"]+list(months)).index(month_default)
+    )
 with summary_col2:
     cat_select = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()))
 
-# 집계 계산
 summary_df = df.copy()
 if month_select != "All":
     summary_df = summary_df[summary_df["Month"] == month_select]
@@ -287,8 +270,26 @@ if summary_df.empty:
 else:
     total_amount = summary_df["Amount"].sum()
     st.success(f"💸 Total Spending: Rp {int(total_amount):,}")
-
     grouped = summary_df.groupby("Category", as_index=False)["Amount"].sum()
     grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
     st.markdown("**Detailed Breakdown:**")
     st.dataframe(grouped, use_container_width=True)
+
+# ====================================================
+# 📥 DOWNLOAD BACKUP EXCEL (복원)
+# ====================================================
+st.markdown("---")
+st.subheader("📥 Download Backup Excel")
+
+if os.path.exists(excel_file):
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Expenses")
+    st.download_button(
+        label="💾 Download current expenses.xlsx",
+        data=buf.getvalue(),
+        file_name=f"expenses_{datetime.today().strftime('%Y-%m-%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+else:
+    st.warning("⚠️ No expenses.xlsx file found to download.")
