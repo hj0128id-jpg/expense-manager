@@ -43,7 +43,6 @@ def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
     mime_type, _ = mimetypes.guess_type(file_name)
     if mime_type is None:
         mime_type = "application/octet-stream"
-
     try:
         with open(file_path, "rb") as f:
             res = supabase.storage.from_(bucket_name).upload(
@@ -122,7 +121,6 @@ if st.button("💾 Save Record"):
         "Receipt": receipt_url if receipt_url else receipt_name
     }
 
-    # Excel 저장
     new_df = pd.DataFrame([new_data])
     if os.path.exists(excel_file):
         old_df = pd.read_excel(excel_file).fillna("-")
@@ -131,7 +129,6 @@ if st.button("💾 Save Record"):
         df_all = new_df
     df_all.to_excel(excel_file, index=False)
 
-    # ✅ Supabase 동기화 (Upsert)
     try:
         supabase.table("expense-data").upsert(new_data).execute()
         st.success("✅ Record saved and synced to Supabase!")
@@ -145,6 +142,7 @@ if st.button("💾 Save Record"):
 # DISPLAY SECTION
 # ====================================================
 df = load_and_ensure_ids(excel_file)
+df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 if df.empty:
     st.info("No records yet.")
     st.stop()
@@ -190,7 +188,11 @@ for i, row in view_df.iterrows():
     cols[1].write(row["Category"])
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
-    cols[4].write(f"Rp {int(row['Amount']):,}")
+    try:
+        amount_value = float(row["Amount"])
+    except (ValueError, TypeError):
+        amount_value = 0
+    cols[4].write(f"Rp {int(amount_value):,}")
     cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else "-", unsafe_allow_html=True)
 
     row_id = str(row["id"])
@@ -207,16 +209,25 @@ for i, row in view_df.iterrows():
                 st.rerun()
         with c3:
             if st.button("🗑️", key=f"del_{i}"):
-                df = df.drop(i)
-                df.to_excel(excel_file, index=False)
+                # ✅ 삭제 - id 기준
+                try:
+                    real_df = pd.read_excel(excel_file).fillna("-")
+                    if "id" in real_df.columns:
+                        real_df = real_df[real_df["id"].astype(str) != row_id]
+                        real_df.to_excel(excel_file, index=False)
+                except Exception as e:
+                    st.warning(f"⚠️ 로컬 삭제 중 오류: {e}")
                 try:
                     supabase.table("expense-data").delete().eq("id", row_id).execute()
                 except Exception as e:
-                    st.warning(f"⚠️ Supabase delete failed: {e}")
-                st.success("🗑️ Deleted on Supabase!")
+                    st.warning(f"⚠️ Supabase 삭제 실패: {e}")
+                st.success("🗑️ Deleted on Supabase & Excel!")
                 time.sleep(0.4)
                 st.rerun()
 
+    # ====================================================
+    # ACTIVE ROW (VIEW / EDIT)
+    # ====================================================
     if st.session_state.active_row == i:
         st.markdown("---")
         if st.session_state.active_mode == "view":
@@ -242,12 +253,23 @@ for i, row in view_df.iterrows():
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{i}"):
-                    df.loc[i, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
-                        new_date, new_cat, new_desc, new_vendor, new_amt
-                    ]
-                    df.to_excel(excel_file, index=False)
+                    row_id = str(row["id"])
+                    # ✅ 로컬 Excel 업데이트
+                    try:
+                        real_df = pd.read_excel(excel_file).fillna("-")
+                        if "id" in real_df.columns:
+                            mask = real_df["id"].astype(str) == row_id
+                            if mask.any():
+                                idxs = real_df[mask].index
+                                for ridx in idxs:
+                                    real_df.loc[ridx, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
+                                        str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
+                                    ]
+                                real_df.to_excel(excel_file, index=False)
+                    except Exception as e:
+                        st.warning(f"⚠️ 로컬 업데이트 중 오류: {e}")
 
-                    # ✅ Supabase 업데이트 (대문자 컬럼명)
+                    # ✅ Supabase 업데이트
                     try:
                         supabase.table("expense-data").update({
                             "Date": str(new_date),
@@ -256,7 +278,7 @@ for i, row in view_df.iterrows():
                             "Vendor": new_vendor,
                             "Amount": int(new_amt)
                         }).eq("id", row_id).execute()
-                        st.success("✅ Updated on Supabase!")
+                        st.success("✅ Updated on Supabase & Excel!")
                     except Exception as e:
                         st.warning(f"⚠️ Supabase update failed: {e}")
 
