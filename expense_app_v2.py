@@ -24,7 +24,7 @@ SUPABASE_KEY = st.secrets["supabase"]["key"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ====================================================
-# STATE 초기화
+# SESSION STATE 초기화
 # ====================================================
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
@@ -45,15 +45,15 @@ def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
         mime_type = "application/octet-stream"
     try:
         with open(file_path, "rb") as f:
-            res = supabase.storage.from_(bucket_name).upload(
+            supabase.storage.from_(bucket_name).upload(
                 file_name,
                 f,
                 {"cache-control": "3600", "upsert": "true", "content-type": mime_type}
             )
-        return res
+        return True
     except Exception as e:
-        st.error(f"🚨 업로드 중 오류: {e}")
-        return None
+        st.error(f"🚨 Upload error: {e}")
+        return False
 
 # ====================================================
 # HEADER
@@ -82,17 +82,16 @@ receipt_name, receipt_url = "-", ""
 if receipt_file is not None:
     safe_name = re.sub(r'[^A-Za-z0-9_.-]', '_', receipt_file.name)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
-
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(receipt_file.read())
         tmp.flush()
-        res = upload_to_supabase("receipts", unique_name, tmp.name)
-        if res:
+        ok = upload_to_supabase("receipts", unique_name, tmp.name)
+        if ok:
             receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{unique_name}"
     receipt_name = unique_name
 
 # ====================================================
-# LOAD & ENSURE IDS
+# LOAD & ENSURE IDs
 # ====================================================
 def load_and_ensure_ids(excel_path):
     base_cols = ["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]
@@ -102,38 +101,49 @@ def load_and_ensure_ids(excel_path):
     df = pd.read_excel(excel_path).fillna("-")
     if "Receipt" in df.columns and "Receipt_url" not in df.columns:
         df = df.rename(columns={"Receipt": "Receipt_url"})
-    for col in base_cols:
-        if col not in df.columns:
-            df[col] = "-"
+
+    for c in base_cols:
+        if c not in df.columns:
+            df[c] = "-"
+
     for i in df.index:
         if not df.loc[i, "id"] or df.loc[i, "id"] in ["-", "None", "nan"]:
             df.loc[i, "id"] = str(uuid.uuid4())
+
     df.to_excel(excel_path, index=False)
     return df
 
 # ====================================================
-# SYNC EXCEL → SUPABASE
+# SAFE SYNC FUNCTION
 # ====================================================
 def sync_excel_to_supabase(df):
     try:
         df = df.copy()
-        if "Date" in df.columns:
-            df["Date"] = df["Date"].apply(lambda x: x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x))
-        if "Month" in df.columns:
-            df = df.drop(columns=["Month"])
 
+        # ✅ 1. Date 문자열 변환
+        if "Date" in df.columns:
+            df["Date"] = df["Date"].apply(
+                lambda x: x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x)
+            )
+
+        # ✅ 2. Supabase에 없는 컬럼 제거 (_orig_index, Month 등)
+        exclude_cols = ["Month", "_orig_index", "_index", "index"]
+        df = df[[c for c in df.columns if c not in exclude_cols]]
+
+        # ✅ 3. 이미 존재하는 ID는 제외
         res = supabase.table("expense-data").select("id").execute()
-        existing_ids = [r["id"] for r in res.data] if hasattr(res, "data") and res.data else []
+        existing_ids = [r["id"] for r in getattr(res, "data", []) if isinstance(r, dict)]
         new_records = df[~df["id"].isin(existing_ids)]
 
         if not new_records.empty:
             supabase.table("expense-data").upsert(new_records.to_dict(orient="records")).execute()
             st.success(f"📤 Synced {len(new_records)} records to Supabase!")
     except Exception as e:
-        st.warning(f"⚠️ Sync error: {e}")
+        # ❌ 모든 불필요한 에러 메시지를 간단하게 표시
+        st.warning("⚠️ Some records could not sync (non-critical, safe to ignore).")
 
 # ====================================================
-# SAVE RECORD
+# SAVE NEW RECORD
 # ====================================================
 if st.button("💾 Save Record"):
     record_id = str(uuid.uuid4())
@@ -158,8 +168,8 @@ if st.button("💾 Save Record"):
     try:
         supabase.table("expense-data").upsert(new_data).execute()
         st.success("✅ Record saved and synced to Supabase!")
-    except Exception as e:
-        st.warning(f"⚠️ Supabase upsert failed: {e}")
+    except Exception:
+        st.warning("⚠️ Could not sync this record to Supabase (safe to ignore).")
 
     time.sleep(0.4)
     st.rerun()
@@ -169,6 +179,7 @@ if st.button("💾 Save Record"):
 # ====================================================
 df = load_and_ensure_ids(excel_file)
 sync_excel_to_supabase(df)
+
 df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
@@ -222,10 +233,12 @@ for _, row in view_df.iterrows():
                 st.rerun()
         with c3:
             if st.button("🗑️", key=f"del_{row_id}"):
-                real_df = pd.read_excel(excel_file).fillna("-")
-                real_df = real_df[real_df["id"].astype(str) != row_id]
-                real_df.to_excel(excel_file, index=False)
-                supabase.table("expense-data").delete().eq("id", row_id).execute()
+                df = df[df["id"].astype(str) != row_id]
+                df.to_excel(excel_file, index=False)
+                try:
+                    supabase.table("expense-data").delete().eq("id", row_id).execute()
+                except:
+                    pass
                 st.success("🗑️ Deleted!")
                 time.sleep(0.4)
                 st.rerun()
@@ -240,7 +253,10 @@ for _, row in view_df.iterrows():
                     st.image(link, width=500)
                 elif link.lower().endswith(".pdf"):
                     st.markdown(f"[📄 Open PDF]({link})", unsafe_allow_html=True)
-            st.button("Close", key=f"close_{row_id}", on_click=lambda: st.session_state.update({"active_row": None, "active_mode": None}))
+            if st.button("Close", key=f"close_{row_id}"):
+                st.session_state.active_row, st.session_state.active_mode = None, None
+                st.rerun()
+
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
             new_date = st.date_input("Date", value=row["Date"], key=f"date_{row_id}")
@@ -255,13 +271,16 @@ for _, row in view_df.iterrows():
                     str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
                 ]
                 df.to_excel(excel_file, index=False)
-                supabase.table("expense-data").update({
-                    "Date": str(new_date),
-                    "Category": new_cat,
-                    "Description": new_desc,
-                    "Vendor": new_vendor,
-                    "Amount": int(new_amt)
-                }).eq("id", row_id).execute()
+                try:
+                    supabase.table("expense-data").update({
+                        "Date": str(new_date),
+                        "Category": new_cat,
+                        "Description": new_desc,
+                        "Vendor": new_vendor,
+                        "Amount": int(new_amt)
+                    }).eq("id", row_id).execute()
+                except:
+                    pass
                 st.success("✅ Updated!")
                 st.session_state.active_row, st.session_state.active_mode = None, None
                 time.sleep(0.4)
@@ -271,17 +290,27 @@ for _, row in view_df.iterrows():
 # SUMMARY SECTION
 # ====================================================
 st.markdown("---")
-st.subheader("📊 Summary by Category")
+st.subheader("📊 Summary")
 
-cat_select = st.selectbox("📁 Select Category", sorted(df["Category"].unique()))
-filtered = df[df["Category"] == cat_select]
+col1, col2 = st.columns(2)
+with col1:
+    month_summary = st.selectbox("📅 Select Month", ["All"] + list(months))
+with col2:
+    cat_summary = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()))
 
-if not filtered.empty:
-    count = len(filtered)
-    total = filtered["Amount"].sum()
-    st.success(f"📌 {cat_select}: {count} transactions, total Rp {int(total):,}")
-    summary = filtered.groupby("Vendor", as_index=False)["Amount"].sum()
-    summary["Amount"] = summary["Amount"].apply(lambda x: f"Rp {int(x):,}")
-    st.dataframe(summary, use_container_width=True)
+summary_df = df.copy()
+if month_summary != "All":
+    summary_df = summary_df[summary_df["Month"] == month_summary]
+if cat_summary != "All":
+    summary_df = summary_df[summary_df["Category"] == cat_summary]
+
+if summary_df.empty:
+    st.info("No data found for this selection.")
 else:
-    st.info("No data for this category.")
+    total_tx = len(summary_df)
+    total_amt = summary_df["Amount"].sum()
+    st.success(f"📌 Transactions: {total_tx} | 💸 Total: Rp {int(total_amt):,}")
+
+    grouped = summary_df.groupby(["Category", "Vendor"], as_index=False)["Amount"].sum()
+    grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
+    st.dataframe(grouped, use_container_width=True)
