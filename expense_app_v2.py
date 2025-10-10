@@ -43,6 +43,7 @@ def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
     mime_type, _ = mimetypes.guess_type(file_name)
     if mime_type is None:
         mime_type = "application/octet-stream"
+
     try:
         with open(file_path, "rb") as f:
             res = supabase.storage.from_(bucket_name).upload(
@@ -82,6 +83,7 @@ receipt_name, receipt_url = "-", ""
 if receipt_file is not None:
     safe_name = re.sub(r'[^A-Za-z0-9_.-]', '_', receipt_file.name)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(receipt_file.read())
         tmp.flush()
@@ -95,7 +97,7 @@ if receipt_file is not None:
 # ====================================================
 def load_and_ensure_ids(excel_path):
     if not os.path.exists(excel_path):
-        return pd.DataFrame(columns=["id", "date", "category", "description", "vendor", "amount", "receipt_url"])
+        return pd.DataFrame(columns=["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt"])
     df = pd.read_excel(excel_path).fillna("-")
     if "id" not in df.columns:
         df["id"] = "-"
@@ -112,12 +114,12 @@ if st.button("💾 Save Record"):
     record_id = str(uuid.uuid4())
     new_data = {
         "id": record_id,
-        "date": str(date),
-        "category": category,
-        "description": description if description else "-",
-        "vendor": vendor if vendor else "-",
-        "amount": int(amount),
-        "receipt_url": receipt_url if receipt_url else receipt_name
+        "Date": str(date),
+        "Category": category,
+        "Description": description if description else "-",
+        "Vendor": vendor if vendor else "-",
+        "Amount": int(amount),
+        "Receipt": receipt_url if receipt_url else receipt_name
     }
 
     # Excel 저장
@@ -147,16 +149,15 @@ if df.empty:
     st.info("No records yet.")
     st.stop()
 
-# Date parsing
-df["date"] = pd.to_datetime(df["date"], errors="coerce")
-df["Month"] = df["date"].dt.strftime("%Y-%m")
+df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2, f3 = st.columns([1.5, 1.5, 1])
 with f1:
     month_filter = st.selectbox("📅 Filter by Month", ["All"] + list(months))
 with f2:
-    cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["category"].unique()))
+    cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
 with f3:
     if st.button("🔄 Reset Filters"):
         month_filter = "All"
@@ -166,10 +167,10 @@ view_df = df.copy()
 if month_filter != "All":
     view_df = view_df[view_df["Month"] == month_filter]
 if cat_filter != "All":
-    view_df = view_df[view_df["category"] == cat_filter]
+    view_df = view_df[view_df["Category"] == cat_filter]
 
 asc_flag = True if st.session_state.sort_order == "asc" else False
-view_df = view_df.sort_values("date", ascending=asc_flag).reset_index(drop=True)
+view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
 # ====================================================
 # SAVED RECORDS TABLE
@@ -185,12 +186,12 @@ categories_list = ["Transportation", "Meals", "Entertainment", "Office", "Office
 
 for i, row in view_df.iterrows():
     cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
-    cols[0].write(row["date"].strftime("%Y-%m-%d") if pd.notna(row["date"]) else "-")
-    cols[1].write(row["category"])
-    cols[2].write(row["description"])
-    cols[3].write(row["vendor"])
-    cols[4].write(f"Rp {int(row['amount']):,}")
-    cols[5].markdown(f"[🔗 View]({row['receipt_url']})" if str(row["receipt_url"]).startswith("http") else "-", unsafe_allow_html=True)
+    cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
+    cols[1].write(row["Category"])
+    cols[2].write(row["Description"])
+    cols[3].write(row["Vendor"])
+    cols[4].write(f"Rp {int(row['Amount']):,}")
+    cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else "-", unsafe_allow_html=True)
 
     row_id = str(row["id"])
 
@@ -216,12 +217,11 @@ for i, row in view_df.iterrows():
                 time.sleep(0.4)
                 st.rerun()
 
-    # View or Edit active row
     if st.session_state.active_row == i:
         st.markdown("---")
         if st.session_state.active_mode == "view":
             st.subheader("🧾 Receipt Preview")
-            link = row["receipt_url"]
+            link = row["Receipt"]
             if str(link).startswith("http"):
                 if link.lower().endswith((".png", ".jpg", ".jpeg")):
                     st.image(link, width=500)
@@ -233,28 +233,28 @@ for i, row in view_df.iterrows():
 
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
-            new_date = st.date_input("Date", value=row["date"], key=f"date_{i}")
-            new_cat = st.selectbox("Category", categories_list, index=categories_list.index(row["category"]), key=f"cat_{i}")
-            new_desc = st.text_input("Description", value=row["description"], key=f"desc_{i}")
-            new_vendor = st.text_input("Vendor", value=row["vendor"], key=f"ven_{i}")
-            new_amt = st.number_input("Amount (Rp)", value=float(row["amount"]), key=f"amt_{i}")
+            new_date = st.date_input("Date", value=row["Date"], key=f"date_{i}")
+            new_cat = st.selectbox("Category", categories_list, index=categories_list.index(row["Category"]), key=f"cat_{i}")
+            new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{i}")
+            new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{i}")
+            new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{i}")
 
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{i}"):
-                    df.loc[i, ["date", "category", "description", "vendor", "amount"]] = [
+                    df.loc[i, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
                         new_date, new_cat, new_desc, new_vendor, new_amt
                     ]
                     df.to_excel(excel_file, index=False)
 
-                    # ✅ Supabase 업데이트
+                    # ✅ Supabase 업데이트 (대문자 컬럼명)
                     try:
                         supabase.table("expense-data").update({
-                            "date": str(new_date),
-                            "category": new_cat,
-                            "description": new_desc,
-                            "vendor": new_vendor,
-                            "amount": int(new_amt)
+                            "Date": str(new_date),
+                            "Category": new_cat,
+                            "Description": new_desc,
+                            "Vendor": new_vendor,
+                            "Amount": int(new_amt)
                         }).eq("id", row_id).execute()
                         st.success("✅ Updated on Supabase!")
                     except Exception as e:
@@ -278,21 +278,21 @@ summary_col1, summary_col2 = st.columns([1.5, 2])
 with summary_col1:
     month_select = st.selectbox("📆 Select Month", ["All"] + list(months))
 with summary_col2:
-    cat_select = st.selectbox("📁 Select Category", ["All"] + sorted(df["category"].unique()))
+    cat_select = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()))
 
 summary_df = df.copy()
 if month_select != "All":
     summary_df = summary_df[summary_df["Month"] == month_select]
 if cat_select != "All":
-    summary_df = summary_df[summary_df["category"] == cat_select]
+    summary_df = summary_df[summary_df["Category"] == cat_select]
 
 if summary_df.empty:
     st.info("No records for this selection.")
 else:
-    total = summary_df["amount"].sum()
+    total = summary_df["Amount"].sum()
     st.success(f"💸 Total Spending: Rp {int(total):,}")
-    grouped = summary_df.groupby("category", as_index=False)["amount"].sum()
-    grouped["amount"] = grouped["amount"].apply(lambda x: f"Rp {int(x):,}")
+    grouped = summary_df.groupby("Category", as_index=False)["Amount"].sum()
+    grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
     st.dataframe(grouped, use_container_width=True)
 
 # ====================================================
