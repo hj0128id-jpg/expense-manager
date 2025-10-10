@@ -37,7 +37,7 @@ excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
 
 # ====================================================
-# 업로드 헬퍼 (Supabase Storage)
+# 업로드 헬퍼
 # ====================================================
 def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
     mime_type, _ = mimetypes.guess_type(file_name)
@@ -92,11 +92,11 @@ if receipt_file is not None:
     receipt_name = unique_name
 
 # ====================================================
-# LOAD & ENSURE ID
+# LOAD DATA
 # ====================================================
 def load_and_ensure_ids(excel_path):
     if not os.path.exists(excel_path):
-        return pd.DataFrame(columns=["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt"])
+        return pd.DataFrame(columns=["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"])
     df = pd.read_excel(excel_path).fillna("-")
     if "id" not in df.columns:
         df["id"] = "-"
@@ -118,9 +118,10 @@ if st.button("💾 Save Record"):
         "Description": description if description else "-",
         "Vendor": vendor if vendor else "-",
         "Amount": int(amount),
-        "Receipt": receipt_url if receipt_url else receipt_name
+        "Receipt_url": receipt_url if receipt_url else receipt_name
     }
 
+    # Excel 저장
     new_df = pd.DataFrame([new_data])
     if os.path.exists(excel_file):
         old_df = pd.read_excel(excel_file).fillna("-")
@@ -129,6 +130,7 @@ if st.button("💾 Save Record"):
         df_all = new_df
     df_all.to_excel(excel_file, index=False)
 
+    # ✅ Supabase 업로드
     try:
         supabase.table("expense-data").upsert(new_data).execute()
         st.success("✅ Record saved and synced to Supabase!")
@@ -143,6 +145,7 @@ if st.button("💾 Save Record"):
 # ====================================================
 df = load_and_ensure_ids(excel_file)
 df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+
 if df.empty:
     st.info("No records yet.")
     st.stop()
@@ -171,106 +174,89 @@ asc_flag = True if st.session_state.sort_order == "asc" else False
 view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
 # ====================================================
-# SAVED RECORDS TABLE
+# RECORDS TABLE
 # ====================================================
 st.markdown("### 📋 Saved Records")
 
 header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
-headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Actions"]
+headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt_url", "Actions"]
 for col, name in zip(header_cols, headers):
     col.markdown(f"**{name}**")
 
 categories_list = ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
 
-for i, row in view_df.iterrows():
+for _, row in view_df.iterrows():
+    row_id = str(row["id"])
     cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
     cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
     cols[1].write(row["Category"])
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
-    try:
-        amount_value = float(row["Amount"])
-    except (ValueError, TypeError):
-        amount_value = 0
-    cols[4].write(f"Rp {int(amount_value):,}")
-    cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else "-", unsafe_allow_html=True)
-
-    row_id = str(row["id"])
+    cols[4].write(f"Rp {int(float(row['Amount'])):,}")
+    cols[5].markdown(f"[🔗 View]({row['Receipt_url']})" if str(row["Receipt_url"]).startswith("http") else "-", unsafe_allow_html=True)
 
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("🧾", key=f"view_{i}"):
-                st.session_state.active_row, st.session_state.active_mode = i, "view"
+            if st.button("🧾", key=f"view_{row_id}"):
+                st.session_state.active_row, st.session_state.active_mode = row_id, "view"
                 st.rerun()
         with c2:
-            if st.button("✏️", key=f"edit_{i}"):
-                st.session_state.active_row, st.session_state.active_mode = i, "edit"
+            if st.button("✏️", key=f"edit_{row_id}"):
+                st.session_state.active_row, st.session_state.active_mode = row_id, "edit"
                 st.rerun()
         with c3:
-            if st.button("🗑️", key=f"del_{i}"):
-                # ✅ 삭제 - id 기준
+            if st.button("🗑️", key=f"del_{row_id}"):
                 try:
                     real_df = pd.read_excel(excel_file).fillna("-")
-                    if "id" in real_df.columns:
-                        real_df = real_df[real_df["id"].astype(str) != row_id]
-                        real_df.to_excel(excel_file, index=False)
+                    real_df = real_df[real_df["id"].astype(str) != row_id]
+                    real_df.to_excel(excel_file, index=False)
                 except Exception as e:
                     st.warning(f"⚠️ 로컬 삭제 중 오류: {e}")
                 try:
                     supabase.table("expense-data").delete().eq("id", row_id).execute()
                 except Exception as e:
                     st.warning(f"⚠️ Supabase 삭제 실패: {e}")
-                st.success("🗑️ Deleted on Supabase & Excel!")
+                st.success("🗑️ Deleted!")
                 time.sleep(0.4)
                 st.rerun()
 
     # ====================================================
     # ACTIVE ROW (VIEW / EDIT)
     # ====================================================
-    if st.session_state.active_row == i:
+    if st.session_state.active_row == row_id:
         st.markdown("---")
         if st.session_state.active_mode == "view":
             st.subheader("🧾 Receipt Preview")
-            link = row["Receipt"]
+            link = row["Receipt_url"]
             if str(link).startswith("http"):
                 if link.lower().endswith((".png", ".jpg", ".jpeg")):
                     st.image(link, width=500)
                 elif link.lower().endswith(".pdf"):
                     st.markdown(f"[📄 Open PDF]({link})", unsafe_allow_html=True)
-            if st.button("Close", key=f"close_{i}"):
+            if st.button("Close", key=f"close_{row_id}"):
                 st.session_state.active_row, st.session_state.active_mode = None, None
                 st.rerun()
 
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
-            new_date = st.date_input("Date", value=row["Date"], key=f"date_{i}")
-            new_cat = st.selectbox("Category", categories_list, index=categories_list.index(row["Category"]), key=f"cat_{i}")
-            new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{i}")
-            new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{i}")
-            new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{i}")
+            new_date = st.date_input("Date", value=row["Date"], key=f"date_{row_id}")
+            new_cat = st.selectbox("Category", categories_list, index=categories_list.index(row["Category"]), key=f"cat_{row_id}")
+            new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{row_id}")
+            new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{row_id}")
+            new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{row_id}")
 
             c4, c5 = st.columns(2)
             with c4:
-                if st.button("💾 Save", key=f"save_{i}"):
-                    row_id = str(row["id"])
-                    # ✅ 로컬 Excel 업데이트
+                if st.button("💾 Save", key=f"save_{row_id}"):
                     try:
                         real_df = pd.read_excel(excel_file).fillna("-")
-                        if "id" in real_df.columns:
-                            mask = real_df["id"].astype(str) == row_id
-                            if mask.any():
-                                idxs = real_df[mask].index
-                                for ridx in idxs:
-                                    real_df.loc[ridx, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
-                                        str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
-                                    ]
-                                real_df.to_excel(excel_file, index=False)
-                    except Exception as e:
-                        st.warning(f"⚠️ 로컬 업데이트 중 오류: {e}")
-
-                    # ✅ Supabase 업데이트
-                    try:
+                        mask = real_df["id"].astype(str) == row_id
+                        if mask.any():
+                            real_df.loc[mask, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
+                                str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
+                            ]
+                            real_df.to_excel(excel_file, index=False)
                         supabase.table("expense-data").update({
                             "Date": str(new_date),
                             "Category": new_cat,
@@ -278,69 +264,13 @@ for i, row in view_df.iterrows():
                             "Vendor": new_vendor,
                             "Amount": int(new_amt)
                         }).eq("id", row_id).execute()
-                        st.success("✅ Updated on Supabase & Excel!")
+                        st.success("✅ Updated!")
                     except Exception as e:
-                        st.warning(f"⚠️ Supabase update failed: {e}")
-
+                        st.warning(f"⚠️ Update failed: {e}")
                     st.session_state.active_row, st.session_state.active_mode = None, None
                     time.sleep(0.4)
                     st.rerun()
             with c5:
-                if st.button("Cancel", key=f"cancel_{i}"):
+                if st.button("Cancel", key=f"cancel_{row_id}"):
                     st.session_state.active_row, st.session_state.active_mode = None, None
                     st.rerun()
-
-# ====================================================
-# SUMMARY SECTION
-# ====================================================
-st.markdown("---")
-st.markdown("### 📊 Monthly / Category Summary")
-
-summary_col1, summary_col2 = st.columns([1.5, 2])
-with summary_col1:
-    month_select = st.selectbox("📆 Select Month", ["All"] + list(months))
-with summary_col2:
-    cat_select = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()))
-
-summary_df = df.copy()
-if month_select != "All":
-    summary_df = summary_df[summary_df["Month"] == month_select]
-if cat_select != "All":
-    summary_df = summary_df[summary_df["Category"] == cat_select]
-
-if summary_df.empty:
-    st.info("No records for this selection.")
-else:
-    total = summary_df["Amount"].sum()
-    st.success(f"💸 Total Spending: Rp {int(total):,}")
-    grouped = summary_df.groupby("Category", as_index=False)["Amount"].sum()
-    grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
-    st.dataframe(grouped, use_container_width=True)
-
-# ====================================================
-# DOWNLOAD
-# ====================================================
-st.markdown("---")
-st.subheader("📥 Download Filtered Excel")
-
-if os.path.exists(excel_file):
-    month_opt = st.selectbox("📅 Select Month to Download", ["All"] + list(months))
-    if month_opt == "All":
-        export_df = df
-        fname = f"expenses_all_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
-    else:
-        export_df = df[df["Month"] == month_opt]
-        fname = f"expenses_{month_opt}.xlsx"
-
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Expenses")
-
-    st.download_button(
-        label=f"📤 Download {month_opt}.xlsx",
-        data=buf.getvalue(),
-        file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-else:
-    st.warning("⚠️ No expenses.xlsx file found to download.")
