@@ -21,8 +21,8 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # GOOGLE AUTH
 # ====================================================
 SCOPES = [
-        "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
+"https://www.googleapis.com/auth/spreadsheets",
+"https://www.googleapis.com/auth/drive"
 ]
 
 service_account_info = json.loads(st.secrets["google"]["service_account"])
@@ -228,4 +228,5 @@ for i, row in view_df.iterrows():
     else:
         cols[5].write(row["Receipt"])
     # (edit/delete/view 로직은 원본과 동일하게 이어서 사용)
+
 
