@@ -7,7 +7,6 @@ from io import BytesIO
 import time
 import tempfile
 from supabase import create_client
-from storage3.utils import FileOptions  # ✅ 필수 추가
 
 # ====================================================
 # PAGE CONFIG
@@ -28,6 +27,28 @@ if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
+
+# ====================================================
+# UPLOAD HELPER (버전 자동 감지)
+# ====================================================
+def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
+    """버전 호환 업로드 함수"""
+    try:
+        # 최신 supabase SDK인 경우
+        from storage3.utils import FileOptions
+        res = supabase.storage.from_(bucket_name).upload(
+            file_name,
+            file_path,
+            file_options=FileOptions(upsert=True)
+        )
+    except ImportError:
+        # 구버전 supabase SDK 호환용
+        res = supabase.storage.from_(bucket_name).upload(
+            file_name,
+            file_path,
+            {"cacheControl": "3600", "upsert": "true"}
+        )
+    return res
 
 # ====================================================
 # HEADER
@@ -59,21 +80,11 @@ if receipt_file is not None:
         tmp.write(receipt_file.read())
         tmp.flush()
 
-        try:
-            # ✅ Supabase 업로드 (정상 문법)
-            res = supabase.storage.from_("receipts").upload(
-                receipt_name,
-                tmp.name,
-                file_options=FileOptions(upsert=True)
-            )
-
-            if res.status_code in (200, 201):
-                receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{receipt_name}"
-            else:
-                st.warning(f"⚠️ Supabase 업로드 실패 (코드 {res.status_code})")
-
-        except Exception as e:
-            st.error(f"🚨 업로드 중 오류 발생: {e}")
+        res = upload_to_supabase("receipts", receipt_name, tmp.name)
+        if res and hasattr(res, "status_code") and res.status_code in (200, 201):
+            receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{receipt_name}"
+        else:
+            st.warning(f"⚠️ Supabase 업로드 실패: {getattr(res, 'status_code', 'Unknown')}")
 
 # ====================================================
 # SAVE RECORD
@@ -162,7 +173,7 @@ for i, row in view_df.iterrows():
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
     cols[4].write(f"Rp {int(row['Amount']):,}")
-    if row["Receipt"].startswith("http"):
+    if str(row["Receipt"]).startswith("http"):
         cols[5].markdown(f"[🔗 View Receipt]({row['Receipt']})", unsafe_allow_html=True)
     else:
         cols[5].write(row["Receipt"])
