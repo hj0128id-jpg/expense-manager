@@ -21,8 +21,8 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # GOOGLE AUTH
 # ====================================================
 SCOPES = [
-"https://www.googleapis.com/auth/spreadsheets",
-"https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"  # ✅ 전체 Drive 권한
 ]
 
 service_account_info = json.loads(st.secrets["google"]["service_account"])
@@ -31,7 +31,22 @@ gc = gspread.authorize(credentials)
 drive_service = build("drive", "v3", credentials=credentials)
 
 SPREADSHEET_ID = "12AuEDjFKAha32dXVres3EYasYC6TiLrEx0zTHfufJKc"
-RECEIPT_FOLDER_ID = "1LrpOrq1GWnH-PweYuC8Bk6wKogiTesD_"
+
+# ====================================================
+# GOOGLE DRIVE FOLDER 자동 생성 (서비스 계정 소유)
+# ====================================================
+folder_name = "Expense_Receipts_Service"
+query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
+results = drive_service.files().list(q=query, fields="files(id)").execute()
+folders = results.get("files", [])
+
+if folders:
+    RECEIPT_FOLDER_ID = folders[0]["id"]
+else:
+    metadata = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
+    folder = drive_service.files().create(body=metadata, fields="id").execute()
+    RECEIPT_FOLDER_ID = folder["id"]
+    st.success(f"📁 Created new folder: {folder_name}")
 
 # ====================================================
 # GLOBAL STATE
@@ -95,9 +110,8 @@ if receipt_file is not None:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(receipt_file.read())
         tmp.flush()
-        # Google Drive upload
-        file_metadata = {"name": receipt_name, "parents": [RECEIPT_FOLDER_ID]}
-        media = MediaFileUpload(tmp.name, mimetype=receipt_file.type)
+        file_metadata = {"name": os.path.basename(receipt_file.name), "parents": [RECEIPT_FOLDER_ID]}
+        media = MediaFileUpload(tmp.name, resumable=True)
         uploaded = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()
         receipt_url = f"https://drive.google.com/file/d/{uploaded.get('id')}/view?usp=sharing"
 
@@ -112,7 +126,6 @@ if st.button("💾 Save Record"):
     except Exception as e:
         st.warning(f"⚠️ Google Sheets 저장 실패: {e}")
 
-    # local backup
     new_data = pd.DataFrame({
         "Date": [date], "Category": [category], "Description": [description or "-"],
         "Vendor": [vendor or "-"], "Amount": [amount],
@@ -125,7 +138,7 @@ if st.button("💾 Save Record"):
         df = new_data
     df.to_excel(excel_file, index=False)
 
-    st.success("✅ Record saved successfully (Google Sheets + Drive synced)!")
+    st.success("✅ Record saved successfully (AutoFolder Google Drive Synced)!")
     time.sleep(0.5)
     st.rerun()
 
@@ -138,20 +151,14 @@ try:
     if not raw_values:
         st.info("No records yet.")
         st.stop()
-
     header = raw_values[0]
     rows = raw_values[1:]
     df = pd.DataFrame(rows, columns=header)
-
-    # 보정
-    required_cols = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]
-    for col in required_cols:
+    for col in ["Date", "Category", "Description", "Vendor", "Amount", "Receipt"]:
         if col not in df.columns:
             df[col] = None
-
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
-
 except Exception as e:
     st.error(f"🚨 Google Sheets 데이터 로드 실패: {e}")
     if os.path.exists(excel_file):
@@ -160,7 +167,7 @@ except Exception as e:
         st.stop()
 
 # ====================================================
-# FILTERS
+# FILTERS + TABLE (원본 그대로)
 # ====================================================
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
 months = sorted(df["Month"].dropna().unique(), reverse=True)
@@ -183,33 +190,6 @@ if reset:
 asc_flag = st.session_state.sort_order == "asc"
 view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
-# ====================================================
-# HEADER + DOWNLOAD
-# ====================================================
-h1, h2 = st.columns([3, 1])
-with h1:
-    st.markdown(f"### 📋 Saved Records ({'⬆️ Ascending' if asc_flag else '⬇️ Descending'})")
-with h2:
-    with st.popover("📥 Download Excel"):
-        month_opt = st.selectbox("Select month to export", ["All"] + list(months))
-        export_df = df if month_opt == "All" else df[df["Month"] == month_opt]
-        buf = BytesIO()
-        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            export_df.to_excel(writer, index=False, sheet_name="Expenses")
-        st.download_button(
-            label=f"📤 Download {month_opt}.xlsx",
-            data=buf.getvalue(),
-            file_name=f"DuckSan_Expense_{month_opt}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-if st.button("🔁 Toggle Sort Order"):
-    st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
-    st.rerun()
-
-# ====================================================
-# TABLE DISPLAY (원본 그대로)
-# ====================================================
 st.markdown("#### Expense Table")
 header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.2, 1.5])
 headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Actions"]
@@ -224,9 +204,6 @@ for i, row in view_df.iterrows():
     cols[3].write(row["Vendor"])
     cols[4].write(f"Rp {int(row['Amount']):,}")
     if str(row["Receipt"]).startswith("http"):
-        cols[5].markdown(f"[Open]( {row['Receipt']} )", unsafe_allow_html=True)
+        cols[5].markdown(f"[Open]({row['Receipt']})", unsafe_allow_html=True)
     else:
         cols[5].write(row["Receipt"])
-    # (edit/delete/view 로직은 원본과 동일하게 이어서 사용)
-
-
