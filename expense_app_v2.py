@@ -52,10 +52,11 @@ if st.button("💾 Save Record"):
             tmp.write(receipt_file.getvalue())
             tmp_path = tmp.name
         try:
+            # ✅ 수정된 부분 — file 인자 중복 제거
             res = supabase.storage.from_(BUCKET_NAME).upload(
-                file=receipt_file.name,
-                file=tmp_path,
-                options={"upsert": True}
+                receipt_file.name,
+                tmp_path,
+                {"upsert": True}
             )
             if hasattr(res, "error") and res.error:
                 st.error(f"🚨 Upload failed: {res.error}")
