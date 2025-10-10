@@ -93,30 +93,78 @@ if receipt_file is not None:
     receipt_name = unique_name
 
 # ====================================================
+# HELPER: load dataframe and ensure 'id' exists
+# ====================================================
+def load_and_ensure_ids(excel_path):
+    if not os.path.exists(excel_path):
+        return pd.DataFrame(columns=["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt"])
+    df = pd.read_excel(excel_path)
+    # fill NaN with '-'
+    df = df.fillna("-")
+    # ensure columns exist
+    for c in ["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt"]:
+        if c not in df.columns:
+            df[c] = "-"
+    # If some rows missing id, generate and try to upsert to supabase
+    if df["id"].isnull().any() or (df["id"] == "-").any():
+        changed = False
+        for idx in df.index:
+            if df.loc[idx, "id"] == "-" or pd.isna(df.loc[idx, "id"]):
+                new_id = str(uuid.uuid4())
+                df.loc[idx, "id"] = new_id
+                changed = True
+        if changed:
+            # save back to excel
+            df.to_excel(excel_path, index=False)
+            # try upsert to supabase (best-effort)
+            try:
+                # prepare payload: convert dates to strings
+                payload = []
+                for _, r in df.iterrows():
+                    payload.append({
+                        "id": str(r["id"]),
+                        "Date": str(r["Date"]) if not pd.isna(r["Date"]) else None,
+                        "Category": r["Category"],
+                        "Description": r["Description"],
+                        "Vendor": r["Vendor"],
+                        "Amount": float(r["Amount"]) if r["Amount"] != "-" else 0,
+                        "Receipt": r["Receipt"]
+                    })
+                # upsert will insert new rows or update by primary key if exists
+                supabase.table("expense-data").upsert(payload).execute()
+            except Exception:
+                # 실패해도 진행 (네트워크/권한 문제 가능)
+                pass
+    return df
+
+# ====================================================
 # SAVE RECORD (엑셀 + Supabase 자동 업로드)
 # ====================================================
 if st.button("💾 Save Record"):
+    record_id = str(uuid.uuid4())
     new_data = {
+        "id": record_id,
         "Date": str(date),
         "Category": category,
         "Description": description if description else "-",
         "Vendor": vendor if vendor else "-",
-        "Amount": amount,
+        "Amount": int(amount),
         "Receipt": receipt_url if receipt_url else receipt_name
     }
 
     # 1️⃣ 엑셀에 저장
     new_df = pd.DataFrame([new_data])
     if os.path.exists(excel_file):
-        old_df = pd.read_excel(excel_file)
+        old_df = pd.read_excel(excel_file).fillna("-")
         df_all = pd.concat([old_df, new_df], ignore_index=True)
     else:
         df_all = new_df
     df_all.to_excel(excel_file, index=False)
 
-    # 2️⃣ Supabase DB에 업로드
+    # 2️⃣ Supabase DB에 업로드 (insert)
     try:
         res = supabase.table("expense-data").insert(new_data).execute()
+        # supabase-py returns a dict-like; check for error
         if hasattr(res, "status_code") and res.status_code >= 400:
             st.warning(f"⚠️ Supabase insert failed: {res}")
         else:
@@ -125,18 +173,23 @@ if st.button("💾 Save Record"):
         st.warning(f"⚠️ Supabase upload error: {e}")
 
     time.sleep(0.4)
-    st.rerun()
+    st.experimental_rerun()
 
 # ====================================================
 # DISPLAY SECTION
 # ====================================================
-if not os.path.exists(excel_file):
+# load dataframe and ensure ids
+df = load_and_ensure_ids(excel_file)
+if df.empty:
     st.info("No records yet.")
     st.stop()
 
-df = pd.read_excel(excel_file).fillna("-")
+# normalize Date column to datetime where possible
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
+
+# preserve original index for exact row reference
+df = df.reset_index().rename(columns={"index": "_orig_index"})
 
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2, f3 = st.columns([1.5, 1.5, 1])
@@ -171,32 +224,61 @@ for col, name in zip(header_cols, headers):
 categories_list = ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"]
 
 for i, row in view_df.iterrows():
+    # row contains '_orig_index' which maps to df._orig_index
     cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
     cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
     cols[1].write(row["Category"])
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
-    cols[4].write(f"Rp {int(row['Amount']):,}")
+    cols[4].write(f"Rp {int(row['Amount']):,}" if row["Amount"] not in [None, "-", ""] else "Rp 0")
     cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else row["Receipt"], unsafe_allow_html=True)
+
+    orig_idx = int(row["_orig_index"])
+    row_id = str(row["id"])
 
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("🧾", key=f"view_{i}"):
                 st.session_state.active_row, st.session_state.active_mode = i, "view"
-                st.rerun()
+                st.session_state._current_view_row = {"i": i, "orig_idx": orig_idx, "row_id": row_id}
+                st.experimental_rerun()
         with c2:
             if st.button("✏️", key=f"edit_{i}"):
                 st.session_state.active_row, st.session_state.active_mode = i, "edit"
-                st.rerun()
+                st.session_state._current_edit_row = {"i": i, "orig_idx": orig_idx, "row_id": row_id}
+                st.experimental_rerun()
         with c3:
             if st.button("🗑️", key=f"del_{i}"):
-                df = df.drop(i)
-                df.to_excel(excel_file, index=False)
+                # remove from local df
+                try:
+                    # drop by _orig_index in original file
+                    # reload actual excel to avoid index mismatch
+                    real_df = pd.read_excel(excel_file).fillna("-")
+                    # find row by id
+                    real_df = real_df.reset_index().rename(columns={"index":"_orig_index"})
+                    mask = real_df["id"] == row_id
+                    if mask.any():
+                        real_df = real_df[~mask]
+                        real_df.to_excel(excel_file, index=False)
+                    else:
+                        # fallback: drop by orig_idx
+                        real_df = real_df[real_df["_orig_index"] != orig_idx]
+                        real_df.to_excel(excel_file, index=False)
+                except Exception as e:
+                    st.warning(f"⚠️ 로컬 삭제 중 오류: {e}")
+
+                # Supabase에도 삭제 요청 (best-effort)
+                try:
+                    supabase.table("expense-data").delete().eq("id", row_id).execute()
+                except Exception as e:
+                    st.warning(f"⚠️ Supabase delete failed: {e}")
+
                 st.success("🗑️ Deleted!")
                 time.sleep(0.4)
-                st.rerun()
+                st.experimental_rerun()
 
+    # ACTIVE ROW: view or edit (works with view_df index i)
     if st.session_state.active_row == i:
         st.markdown("---")
         if st.session_state.active_mode == "view":
@@ -207,35 +289,80 @@ for i, row in view_df.iterrows():
                     st.image(link, width=500)
                 elif link.lower().endswith(".pdf"):
                     st.markdown(f"[📄 Open PDF]({link})", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"[🔗 Open]({link})", unsafe_allow_html=True)
             else:
                 st.warning("⚠️ File not found.")
             if st.button("Close", key=f"close_{i}"):
                 st.session_state.active_row, st.session_state.active_mode = None, None
-                st.rerun()
+                st.experimental_rerun()
 
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
-            new_date = st.date_input("Date", value=row["Date"], key=f"date_{i}")
-            new_cat = st.selectbox("Category", categories_list, index=categories_list.index(row["Category"]), key=f"cat_{i}")
+            # use current values as defaults
+            new_date = st.date_input("Date", value=row["Date"] if pd.notna(row["Date"]) else datetime.today(), key=f"date_{i}")
+            # ensure category exists in list
+            init_cat_index = 0
+            if row["Category"] in categories_list:
+                init_cat_index = categories_list.index(row["Category"])
+            else:
+                categories_list.append(row["Category"])
+                init_cat_index = categories_list.index(row["Category"])
+            new_cat = st.selectbox("Category", categories_list, index=init_cat_index, key=f"cat_{i}")
             new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{i}")
             new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{i}")
-            new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{i}")
+            try:
+                new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]) if row["Amount"] not in [None, "-", ""] else 0.0, key=f"amt_{i}")
+            except Exception:
+                new_amt = st.number_input("Amount (Rp)", value=0.0, key=f"amt_{i}")
 
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{i}"):
-                    df.loc[i, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
-                        new_date, new_cat, new_desc, new_vendor, new_amt
-                    ]
-                    df.to_excel(excel_file, index=False)
+                    # update local excel by id
+                    try:
+                        real_df = pd.read_excel(excel_file).fillna("-")
+                        # find by id
+                        mask = real_df["id"] == row_id
+                        if mask.any():
+                            idxs = real_df[mask].index
+                            for ridx in idxs:
+                                real_df.loc[ridx, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
+                                    str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
+                                ]
+                            real_df.to_excel(excel_file, index=False)
+                        else:
+                            # fallback - try using _orig_index
+                            real_df = real_df.reset_index().rename(columns={"index":"_orig_index"})
+                            real_df.loc[real_df["_orig_index"] == orig_idx, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
+                                str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
+                            ]
+                            # drop helper col then save
+                            real_df = real_df.drop(columns=["_orig_index"])
+                            real_df.to_excel(excel_file, index=False)
+                    except Exception as e:
+                        st.warning(f"⚠️ 로컬 업데이트 중 오류: {e}")
+
+                    # Supabase 반영
+                    try:
+                        supabase.table("expense-data").update({
+                            "Date": str(new_date),
+                            "Category": new_cat,
+                            "Description": new_desc,
+                            "Vendor": new_vendor,
+                            "Amount": int(new_amt)
+                        }).eq("id", row_id).execute()
+                    except Exception as e:
+                        st.warning(f"⚠️ Supabase update failed: {e}")
+
                     st.success("✅ Updated!")
                     st.session_state.active_row, st.session_state.active_mode = None, None
                     time.sleep(0.4)
-                    st.rerun()
+                    st.experimental_rerun()
             with c5:
                 if st.button("Cancel", key=f"cancel_{i}"):
                     st.session_state.active_row, st.session_state.active_mode = None, None
-                    st.rerun()
+                    st.experimental_rerun()
 
 # ====================================================
 # SUMMARY SECTION
@@ -258,7 +385,7 @@ if cat_select != "All":
 if summary_df.empty:
     st.info("No records for this selection.")
 else:
-    total = summary_df["Amount"].sum()
+    total = summary_df["Amount"].replace("-", 0).astype(float).sum()
     st.success(f"💸 Total Spending: Rp {int(total):,}")
     grouped = summary_df.groupby("Category", as_index=False)["Amount"].sum()
     grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
@@ -273,10 +400,13 @@ st.subheader("📥 Download Filtered Excel")
 if os.path.exists(excel_file):
     month_opt = st.selectbox("📅 Select Month to Download", ["All"] + list(months))
     if month_opt == "All":
-        export_df = df
+        export_df = pd.read_excel(excel_file).fillna("-")
         fname = f"expenses_all_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
     else:
-        export_df = df[df["Month"] == month_opt]
+        temp_df = pd.read_excel(excel_file).fillna("-")
+        temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
+        temp_df["Month"] = temp_df["Date"].dt.strftime("%Y-%m")
+        export_df = temp_df[temp_df["Month"] == month_opt]
         fname = f"expenses_{month_opt}.xlsx"
 
     buf = BytesIO()
