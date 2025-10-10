@@ -36,7 +36,7 @@ def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
     try:
         # 최신 supabase SDK인 경우
         from storage3.utils import FileOptions
-        res = supabase.storage.from_(bucket_name).upload(
+        res = supabase.storage.from_(Receipts).upload(
             file_name,
             file_path,
             file_options=FileOptions(upsert=True)
@@ -195,3 +195,4 @@ with c1:
 with c2:
     st.write("**By Month**")
     st.dataframe(mon_sum)
+
