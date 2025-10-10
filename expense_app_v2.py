@@ -24,7 +24,7 @@ drive_service = build("drive", "v3", credentials=credentials)
 # ==========================
 # 📊 Google Sheets / Drive 설정
 # ==========================
-SPREADSHEET_NAME = "Expense_Records"
+SPREADSHEET_NAME = "Expense Records"
 RECEIPT_FOLDER_ID = "1LrpOrq1GWnH-PweYuC8Bk6wKogiTesD_"
 sheet = gc.open(SPREADSHEET_NAME).sheet1
 
@@ -150,4 +150,5 @@ if not df.empty:
         st.dataframe(category_summary, use_container_width=True)
 else:
     st.warning("시트에 데이터가 없습니다.")
+
 
