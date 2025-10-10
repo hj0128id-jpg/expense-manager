@@ -7,6 +7,7 @@ from io import BytesIO
 import time
 import tempfile
 from supabase import create_client
+from storage3.utils import FileOptions  # ✅ 필수 추가
 
 # ====================================================
 # PAGE CONFIG
@@ -58,12 +59,21 @@ if receipt_file is not None:
         tmp.write(receipt_file.read())
         tmp.flush()
 
-        # ✅ Supabase 업로드
-        res = supabase.storage.from_("receipts").upload(receipt_name, tmp.name, {"upsert": True})
-        if res.status_code in (200, 201):
-            receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{receipt_name}"
-        else:
-            st.warning("⚠️ Supabase 업로드 실패")
+        try:
+            # ✅ Supabase 업로드 (정상 문법)
+            res = supabase.storage.from_("receipts").upload(
+                receipt_name,
+                tmp.name,
+                file_options=FileOptions(upsert=True)
+            )
+
+            if res.status_code in (200, 201):
+                receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{receipt_name}"
+            else:
+                st.warning(f"⚠️ Supabase 업로드 실패 (코드 {res.status_code})")
+
+        except Exception as e:
+            st.error(f"🚨 업로드 중 오류 발생: {e}")
 
 # ====================================================
 # SAVE RECORD
