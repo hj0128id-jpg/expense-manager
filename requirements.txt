@@ -1,8 +1,6 @@
 streamlit
-gspread
-google-auth
-google-api-python-client
 pandas
+Pillow
 openpyxl
-numpy
-supabase
+supabase>=2.3.0
+storage3>=0.7.0
