@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
+import os  # ✅ 이 줄 추가!
 
 # ======================================
 # 기존 Excel 파일 로드
