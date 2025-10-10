@@ -182,3 +182,4 @@ if not df.empty:
         st.dataframe(category_summary, use_container_width=True)
 else:
     st.warning("시트에 데이터가 없습니다.")
+
