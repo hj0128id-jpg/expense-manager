@@ -290,3 +290,26 @@ else:
     grouped = summary_df.groupby(["Category", "Vendor"], as_index=False)["Amount"].sum()
     grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
     st.dataframe(grouped, use_container_width=True)
+
+# ==============================================
+# ⚙️ Supabase → Excel 강제 동기화 (이번만 실행용)
+# ==============================================
+import pandas as pd
+from supabase import create_client
+
+SUPABASE_URL = st.secrets["supabase"]["url"]
+SUPABASE_KEY = st.secrets["supabase"]["key"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+try:
+    res = supabase.table("expense-data").select("*").execute()
+    supa_data = pd.DataFrame(res.data if res.data else [])
+    if not supa_data.empty:
+        supa_data.to_excel("expenses.xlsx", index=False)
+        st.success(f"✅ Synced {len(supa_data)} records from Supabase → Streamlit Excel!")
+    else:
+        st.info("ℹ️ Supabase에 데이터가 없습니다.")
+except Exception as e:
+    st.error(f"⚠️ Sync failed: {e}")
+
+
