@@ -31,7 +31,7 @@ if "active_row" not in st.session_state:
 if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 if "sort_order" not in st.session_state:
-    st.session_state.sort_order = "desc"  # 기본: 최신순
+    st.session_state.sort_order = "desc"  # 기본 최신순
 
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
@@ -167,7 +167,6 @@ if st.button("💾 Save Record"):
     else:
         df_all = new_df
 
-    # ✅ 자동 최신순 정렬
     df_all["Date"] = pd.to_datetime(df_all["Date"], errors="coerce")
     df_all = df_all.sort_values("Date", ascending=False)
     df_all.to_excel(excel_file, index=False)
@@ -187,16 +186,24 @@ df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
 
-# ✅ 자동 클린업: 완전 빈 행 / Rp 0행 제거
+# ✅ 완벽 자동 클린업 (Amount 0이고 다른 필드 모두 비었을 때만 삭제)
 try:
     temp_df = pd.read_excel(excel_file)
+    temp_df = temp_df.replace("Rp 0", 0).replace("-", None)
+    temp_df["Amount"] = pd.to_numeric(temp_df["Amount"], errors="coerce").fillna(0)
     temp_df = temp_df.dropna(how="all")
-    temp_df = temp_df[~((temp_df["Amount"].fillna(0) == 0) &
-                        (temp_df["Description"].isin(["-", "", None])) &
-                        (temp_df["Category"].isin(["-", "", None])))]
+
+    # Amount=0 이면서 다른 필드도 모두 비었을 때만 제거
+    temp_df = temp_df[~(
+        (temp_df["Amount"] == 0) &
+        (temp_df["Date"].isna() | (temp_df["Date"].astype(str).isin(["", "None", "NaT", "nan"]))) &
+        (temp_df["Category"].isna() | temp_df["Category"].astype(str).isin(["", "None", "nan"])) &
+        (temp_df["Description"].isna() | temp_df["Description"].astype(str).isin(["", "None", "nan"])) &
+        (temp_df["Vendor"].isna() | temp_df["Vendor"].astype(str).isin(["", "None", "nan"]))
+    )]
     temp_df.to_excel(excel_file, index=False)
-except Exception:
-    pass
+except Exception as e:
+    st.warning(f"⚠️ Clean-up skipped: {e}")
 
 # ====================================================
 # RELOAD CLEANED DATA
