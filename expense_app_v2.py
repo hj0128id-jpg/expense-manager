@@ -51,14 +51,7 @@ def upload_to_supabase(bucket_name: str, file_name: str, file_path: str):
                 f,
                 {"cache-control": "3600", "upsert": "true", "content-type": mime_type}
             )
-
-        if isinstance(res, dict):
-            st.toast("✅ Uploaded (Supabase dict response)")
-        elif hasattr(res, "status_code") and res.status_code in (200, 201):
-            st.toast("✅ Uploaded (Supabase HTTP response)")
-        else:
-            st.toast("✅ Upload likely successful")
-
+        st.toast("✅ Uploaded to Supabase")
         return res
     except Exception as e:
         st.error(f"🚨 업로드 중 오류: {e}")
@@ -95,15 +88,11 @@ if receipt_file is not None:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(receipt_file.read())
         tmp.flush()
-
         res = upload_to_supabase("receipts", unique_name, tmp.name)
         if res:
             receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{unique_name}"
     receipt_name = unique_name
 
-# ====================================================
-# SAVE RECORD
-# ====================================================
 if st.button("💾 Save Record"):
     new_data = pd.DataFrame({
         "Date": [date],
@@ -155,10 +144,17 @@ asc_flag = True if st.session_state.sort_order == "asc" else False
 view_df = view_df.sort_values("Date", ascending=asc_flag).reset_index(drop=True)
 
 # ====================================================
-# SAVED RECORDS SECTION (복원 + 확장)
+# SAVED RECORDS SECTION (with Header)
 # ====================================================
 st.markdown("### 📋 Saved Records")
 
+# === 테이블 헤더 표시 ===
+header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
+headers = ["Date", "Category", "Description", "Vendor", "Amount", "Receipt", "Actions"]
+for col, name in zip(header_cols, headers):
+    col.markdown(f"**{name}**")
+
+# === 데이터 행 표시 ===
 for i, row in view_df.iterrows():
     cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
     cols[0].write(row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-")
@@ -166,7 +162,7 @@ for i, row in view_df.iterrows():
     cols[2].write(row["Description"])
     cols[3].write(row["Vendor"])
     cols[4].write(f"Rp {int(row['Amount']):,}")
-    cols[5].markdown(f"[🔗 View Receipt]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else row["Receipt"], unsafe_allow_html=True)
+    cols[5].markdown(f"[🔗 View]({row['Receipt']})" if str(row["Receipt"]).startswith("http") else row["Receipt"], unsafe_allow_html=True)
 
     with cols[6]:
         c1, c2, c3 = st.columns(3)
@@ -186,47 +182,29 @@ for i, row in view_df.iterrows():
                 time.sleep(0.5)
                 st.rerun()
 
-    # === VIEW MODE ===
-    if st.session_state.active_row == i:
-        if st.session_state.active_mode == "view":
-            st.markdown("---")
-            st.subheader("🧾 Receipt Preview")
-            if str(row["Receipt"]).startswith("http"):
-                if row["Receipt"].endswith((".png", ".jpg", ".jpeg")):
-                    st.image(row["Receipt"], width=500)
-                elif row["Receipt"].endswith(".pdf"):
-                    st.markdown(f"[📄 Open PDF]({row['Receipt']})", unsafe_allow_html=True)
-            else:
-                st.warning("⚠️ No valid receipt link found.")
-            if st.button("Close", key=f"close_{i}"):
-                st.session_state.active_row = None
-                st.rerun()
+# ====================================================
+# SUMMARY SECTION (MONTH & CATEGORY)
+# ====================================================
+st.markdown("---")
+st.markdown("### 📊 Monthly / Category Summary")
 
-        # === EDIT MODE ===
-        elif st.session_state.active_mode == "edit":
-            st.markdown("---")
-            st.subheader("✏️ Edit Record")
-            new_date = st.date_input("Date", value=row["Date"], key=f"date_{i}")
-            new_cat = st.selectbox("Category",
-                ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
-                index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]),
-                key=f"cat_{i}"
-            )
-            new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{i}")
-            new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{i}")
-            new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{i}")
-            c4, c5 = st.columns(2)
-            with c4:
-                if st.button("💾 Save", key=f"save_{i}"):
-                    df.loc[view_df.index[i], ["Date","Category","Description","Vendor","Amount"]] = [
-                        new_date, new_cat, new_desc, new_vendor, new_amt
-                    ]
-                    df.to_excel(excel_file, index=False)
-                    st.success("✅ Updated!")
-                    st.session_state.active_row = None
-                    time.sleep(0.5)
-                    st.rerun()
-            with c5:
-                if st.button("Cancel", key=f"cancel_{i}"):
-                    st.session_state.active_row = None
-                    st.rerun()
+summary_col1, summary_col2 = st.columns([1.5, 2])
+with summary_col1:
+    month_select = st.selectbox("📆 Select Month", list(months))
+with summary_col2:
+    cat_select = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()))
+
+summary_df = df[df["Month"] == month_select]
+if cat_select != "All":
+    summary_df = summary_df[summary_df["Category"] == cat_select]
+
+if summary_df.empty:
+    st.info("No records for this selection.")
+else:
+    total_amount = summary_df["Amount"].sum()
+    st.success(f"💸 Total Spending: Rp {int(total_amount):,}")
+
+    grouped = summary_df.groupby("Category", as_index=False)["Amount"].sum()
+    grouped["Amount"] = grouped["Amount"].apply(lambda x: f"Rp {int(x):,}")
+    st.markdown("**Detailed Breakdown:**")
+    st.dataframe(grouped, use_container_width=True)
