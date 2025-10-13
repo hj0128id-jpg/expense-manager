@@ -21,7 +21,6 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # ====================================================
 @st.cache_resource(ttl=0, show_spinner=False)
 def get_supabase():
-    """앱이 inactive → 다시 켜질 때도 자동 재연결"""
     url = st.secrets["supabase"]["url"]
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
@@ -96,15 +95,49 @@ if receipt_file is not None:
     receipt_name = unique_name
 
 # ====================================================
-# LOAD & ENSURE IDs
+# SAVE NEW RECORD
+# ====================================================
+if st.button("💾 Save Record", use_container_width=True):
+    record_id = str(uuid.uuid4())
+    new_data = {
+        "id": record_id,
+        "Date": str(date),
+        "Category": category,
+        "Description": description or "-",
+        "Vendor": vendor or "-",
+        "Amount": int(amount),
+        "Receipt_url": receipt_url or receipt_name
+    }
+
+    new_df = pd.DataFrame([new_data])
+    if os.path.exists(excel_file):
+        old_df = pd.read_excel(excel_file).fillna("-")
+        df_all = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        df_all = new_df
+
+    df_all["Date"] = pd.to_datetime(df_all["Date"], errors="coerce")
+    df_all = df_all.sort_values("Date", ascending=False)
+    df_all.to_excel(excel_file, index=False)
+
+    try:
+        supabase.table("expense-data").upsert(new_data).execute()
+    except Exception as e:
+        st.warning(f"Supabase insert failed: {e}")
+
+    st.session_state.df = df_all
+    st.success("✅ Record Saved!")
+    time.sleep(0.5)
+    st.rerun()
+
+# ====================================================
+# LOAD & CLEANUP
 # ====================================================
 def load_and_ensure_ids(excel_path):
     base_cols = ["id", "Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]
     if not os.path.exists(excel_path):
         return pd.DataFrame(columns=base_cols)
     df = pd.read_excel(excel_path).fillna("-")
-    if "Receipt" in df.columns and "Receipt_url" not in df.columns:
-        df = df.rename(columns={"Receipt": "Receipt_url"})
     for c in base_cols:
         if c not in df.columns:
             df[c] = "-"
@@ -114,95 +147,37 @@ def load_and_ensure_ids(excel_path):
     df.to_excel(excel_path, index=False)
     return df
 
-# ====================================================
-# SYNC FUNCTIONS
-# ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
         res = supabase.table("expense-data").select("*").execute()
         data = getattr(res, "data", None)
         supa_data = pd.DataFrame(data if data else [])
         if supa_data.empty:
-            st.warning("⚠️ Supabase에 데이터가 없습니다.")
             return
-
         if "Date" in supa_data.columns:
             supa_data["Date"] = pd.to_datetime(supa_data["Date"], errors="coerce")
-
         if os.path.exists(excel_path):
             local_df = pd.read_excel(excel_path).fillna("-")
         else:
             local_df = pd.DataFrame(columns=supa_data.columns)
-
-        if "Receipt" in local_df.columns and "Receipt_url" not in local_df.columns:
-            local_df = local_df.rename(columns={"Receipt": "Receipt_url"})
-        if "id" not in local_df.columns:
-            local_df["id"] = "-"
-
         merged = pd.concat([local_df, supa_data]).drop_duplicates(subset=["id"], keep="last")
         merged.to_excel(excel_path, index=False)
-
-        # ✅ 화면 즉시 반영
         st.session_state.df = merged
-        st.success(f"💾 Supabase → Excel 동기화 완료 ({len(merged)} rows)")
-    except Exception as e:
-        st.error(f"❌ sync_supabase_to_excel failed: {e}")
-
-def sync_excel_to_supabase(df):
-    try:
-        df = df.copy()
-        if "Date" in df.columns:
-            df["Date"] = df["Date"].apply(lambda x: x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x))
-        df = df[[c for c in df.columns if c not in ["Month", "_orig_index", "index"]]]
-        res = supabase.table("expense-data").select("id").execute()
-        existing_ids = [r["id"] for r in getattr(res, "data", []) if isinstance(r, dict)]
-        new_records = df[~df["id"].isin(existing_ids)]
-        if not new_records.empty:
-            supabase.table("expense-data").upsert(new_records.to_dict(orient="records")).execute()
     except Exception:
         pass
 
-# ====================================================
-# FORCE RELOAD ON APP START (after inactive)
-# ====================================================
-if "reloaded" not in st.session_state:
-    st.session_state.reloaded = True
-    try:
-        st.info("🔄 Reconnecting to Supabase and loading latest data...")
-        supabase = get_supabase()
-        sync_supabase_to_excel(excel_file)
-        st.success("✅ Latest data loaded from Supabase!")
-        time.sleep(0.4)
-        st.rerun()
-    except Exception as e:
-        st.error(f"❌ Auto reload failed: {e}")
-
-# ====================================================
-# LOAD + SYNC BOTH + AUTO CLEANUP
-# ====================================================
 df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
-sync_excel_to_supabase(df)
 
-if "df" in st.session_state and not st.session_state.df.empty:
-    df = st.session_state.df
-
-# ====================================================
-# ⚙️ CLEAN EMPTY OR DUPLICATE ROWS (중복 Rp0 / None 제거)
-# ====================================================
 df = df.dropna(how="all").replace("-", None)
 df = df[df["Date"].notna()]
-
-# ====================================================
-# RELOAD CLEANED DATA
-# ====================================================
 df = df.fillna("-")
 df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
 # ====================================================
-# FILTERS + UI
+# FILTER
 # ====================================================
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2 = st.columns(2)
@@ -218,7 +193,7 @@ if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
 
 # ====================================================
-# SAVED RECORDS (원래 UI 유지)
+# SAVED RECORDS
 # ====================================================
 st.markdown("### 📋 Saved Records")
 
@@ -228,7 +203,6 @@ with header_cols[0]:
     if st.button(f"📅 Date {sort_icon}"):
         st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
         st.rerun()
-
 for c, h in zip(header_cols[1:], ["Category", "Description", "Vendor", "Amount", "Receipt_url", "Actions"]):
     c.markdown(f"**{h}**")
 
@@ -247,7 +221,6 @@ for _, row in view_df.iterrows():
     cols[4].write(f"Rp {int(float(row['Amount'])):,}")
     link = row.get("Receipt_url", "-")
     cols[5].markdown(f"[🔗 View]({link})" if str(link).startswith("http") else "-", unsafe_allow_html=True)
-
     with cols[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -265,7 +238,7 @@ for _, row in view_df.iterrows():
                 supabase.table("expense-data").delete().eq("id", row_id).execute()
                 st.session_state.df = df
                 st.success("🗑️ Deleted!")
-                time.sleep(0.4)
+                time.sleep(0.3)
                 st.rerun()
 
     if st.session_state.active_row == row_id:
@@ -285,11 +258,10 @@ for _, row in view_df.iterrows():
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
             new_date = st.date_input("Date", value=row["Date"], key=f"date_{row_id}")
-            new_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"], key=f"cat_{row_id}", index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]) if row["Category"] in ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"] else 0)
+            new_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"], key=f"cat_{row_id}")
             new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{row_id}")
             new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{row_id}")
             new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{row_id}")
-
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{row_id}"):
@@ -304,7 +276,7 @@ for _, row in view_df.iterrows():
                     }).eq("id", row_id).execute()
                     st.session_state.df = df
                     st.success("✅ Updated!")
-                    time.sleep(0.4)
+                    time.sleep(0.3)
                     st.rerun()
             with c5:
                 if st.button("Cancel", key=f"cancel_{row_id}"):
@@ -313,35 +285,27 @@ for _, row in view_df.iterrows():
                     st.rerun()
 
 # ====================================================
-# 📊 SUMMARY (접히는 버전)
+# SUMMARY (접히는 버전)
 # ====================================================
 st.markdown("---")
 with st.expander("📊 Monthly & Category Summary", expanded=False):
     st.subheader("📈 Summary Overview")
-
     col1, col2 = st.columns(2)
     with col1:
         month_summary = st.selectbox("📅 Select Month", ["All"] + list(months), key="summary_month")
     with col2:
         cat_summary = st.selectbox("📁 Select Category", ["All"] + sorted(df["Category"].unique()), key="summary_cat")
-
     summary_df = df.copy()
     if month_summary != "All":
         summary_df = summary_df[summary_df["Month"] == month_summary]
     if cat_summary != "All":
         summary_df = summary_df[summary_df["Category"] == cat_summary]
-
     if summary_df.empty:
         st.info("No data for this selection.")
     else:
         count = len(summary_df)
         total = summary_df["Amount"].sum()
-        st.success(
-            f"📌 {month_summary if month_summary!='All' else 'All months'} | "
-            f"{cat_summary if cat_summary!='All' else 'All categories'} → "
-            f"{count} transactions, Rp {int(total):,}"
-        )
-
+        st.success(f"📌 {month_summary if month_summary!='All' else 'All months'} | {cat_summary if cat_summary!='All' else 'All categories'} → {count} transactions, Rp {int(total):,}")
         display_df = summary_df[["Date", "Category", "Description", "Vendor", "Amount", "Receipt_url"]].copy()
         display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
         display_df["Amount"] = display_df["Amount"].apply(lambda x: f"Rp {int(x):,}")
