@@ -8,7 +8,6 @@ import tempfile
 import mimetypes
 import re
 import uuid
-import json
 from supabase import create_client
 
 # ====================================================
@@ -37,6 +36,8 @@ if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame()
 
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
@@ -113,7 +114,7 @@ def load_and_ensure_ids(excel_path):
     return df
 
 # ====================================================
-# SYNC FUNCTIONS (핵심 수정)
+# SYNC FUNCTIONS
 # ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
@@ -123,6 +124,7 @@ def sync_supabase_to_excel(excel_path):
         if supa_data.empty:
             st.warning("⚠️ Supabase에 데이터가 없습니다.")
             return
+
         if "Date" in supa_data.columns:
             supa_data["Date"] = pd.to_datetime(supa_data["Date"], errors="coerce")
 
@@ -131,15 +133,10 @@ def sync_supabase_to_excel(excel_path):
         else:
             local_df = pd.DataFrame(columns=supa_data.columns)
 
-        if "Receipt" in local_df.columns and "Receipt_url" not in local_df.columns:
-            local_df = local_df.rename(columns={"Receipt": "Receipt_url"})
-        if "id" not in local_df.columns:
-            local_df["id"] = "-"
-
         merged = pd.concat([local_df, supa_data]).drop_duplicates(subset=["id"], keep="last")
         merged.to_excel(excel_path, index=False)
 
-        # ✅ 화면 즉시 반영
+        # ✅ 즉시 화면 반영
         st.session_state.df = merged
         st.success(f"💾 Supabase → Excel 동기화 완료 ({len(merged)} rows)")
     except Exception as e:
@@ -150,7 +147,6 @@ def sync_excel_to_supabase(df):
         df = df.copy()
         if "Date" in df.columns:
             df["Date"] = df["Date"].apply(lambda x: x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x))
-        df = df[[c for c in df.columns if c not in ["Month", "_orig_index", "index"]]]
         res = supabase.table("expense-data").select("id").execute()
         existing_ids = [r["id"] for r in getattr(res, "data", []) if isinstance(r, dict)]
         new_records = df[~df["id"].isin(existing_ids)]
@@ -160,7 +156,7 @@ def sync_excel_to_supabase(df):
         pass
 
 # ====================================================
-# FORCE RELOAD ON APP START (after inactive)
+# FORCE RELOAD ON APP START
 # ====================================================
 if "reloaded" not in st.session_state:
     st.session_state.reloaded = True
@@ -181,8 +177,14 @@ df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
 
-if "df" in st.session_state and not st.session_state.df.empty:
+if not st.session_state.df.empty:
     df = st.session_state.df
+
+# ====================================================
+# ✅ 빈행/중복행 제거 (새로 추가된 부분)
+# ====================================================
+df = df.dropna(how="all").replace("-", None)
+df = df[df["Date"].notna()]
 
 # ====================================================
 # RELOAD CLEANED DATA
@@ -209,7 +211,7 @@ if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
 
 # ====================================================
-# SAVED RECORDS (원래 UI 그대로 복원)
+# SAVED RECORDS (원래 UI 그대로)
 # ====================================================
 st.markdown("### 📋 Saved Records")
 
@@ -226,7 +228,6 @@ for c, h in zip(header_cols[1:], ["Category", "Description", "Vendor", "Amount",
 ascending_flag = st.session_state.sort_order == "asc"
 view_df = view_df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
 
-# === 기존 행별 버튼/수정/삭제/미리보기 전부 동일 유지 ===
 df["id"] = df["id"].astype(str)
 for _, row in view_df.iterrows():
     row_id = str(row["id"])
@@ -276,7 +277,11 @@ for _, row in view_df.iterrows():
         elif st.session_state.active_mode == "edit":
             st.subheader("✏️ Edit Record")
             new_date = st.date_input("Date", value=row["Date"], key=f"date_{row_id}")
-            new_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"], key=f"cat_{row_id}", index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]) if row["Category"] in ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"] else 0)
+            new_cat = st.selectbox("Category",
+                ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"],
+                key=f"cat_{row_id}",
+                index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]) if row["Category"] in ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"] else 0
+            )
             new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{row_id}")
             new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{row_id}")
             new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{row_id}")
@@ -284,7 +289,9 @@ for _, row in view_df.iterrows():
             c4, c5 = st.columns(2)
             with c4:
                 if st.button("💾 Save", key=f"save_{row_id}"):
-                    df.loc[df["id"] == row_id, ["Date", "Category", "Description", "Vendor", "Amount"]] = [str(new_date), new_cat, new_desc, new_vendor, int(new_amt)]
+                    df.loc[df["id"] == row_id, ["Date", "Category", "Description", "Vendor", "Amount"]] = [
+                        str(new_date), new_cat, new_desc, new_vendor, int(new_amt)
+                    ]
                     df.to_excel(excel_file, index=False)
                     supabase.table("expense-data").update({
                         "Date": str(new_date),
