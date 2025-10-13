@@ -47,6 +47,48 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ====================================================
+# 글씨 색상 명확히 (입력창, 셀렉트박스, 업로더, 버튼 등)
+# ====================================================
+st.markdown("""
+    <style>
+    /* 입력창, 선택창, 업로더 내부 글씨 검정색 */
+    input, textarea, select, div[data-baseweb="input"] input {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+
+    /* 드롭다운 내부 옵션 글씨 */
+    div[role="listbox"] div {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+
+    /* 파일 업로더 라벨, 안내문 글씨 */
+    .stFileUploader label, .stFileUploader div {
+        color: #000000 !important;
+    }
+
+    /* 버튼 텍스트 및 색상 */
+    .stButton>button {
+        color: #000000 !important;
+        background-color: #f3f3f3 !important;
+        border: 1px solid #cccccc !important;
+    }
+
+    /* selectbox, number input 테두리 명확하게 */
+    .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div {
+        border: 1px solid #d0d0d0 !important;
+    }
+
+    /* 라벨(필드명)도 검정색 */
+    label, .stTextInput label, .stSelectbox label, .stNumberInput label {
+        color: #000000 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 
 # ====================================================
 # SUPABASE CONNECTION
@@ -304,4 +346,5 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
