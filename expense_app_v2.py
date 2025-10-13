@@ -19,9 +19,14 @@ st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
 # ====================================================
 # SUPABASE CONNECTION
 # ====================================================
-SUPABASE_URL = st.secrets["supabase"]["url"]
-SUPABASE_KEY = st.secrets["supabase"]["key"]
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+@st.cache_resource(ttl=0, show_spinner=False)
+def get_supabase():
+    """앱이 inactive → 다시 켜질 때도 자동 재연결"""
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+supabase = get_supabase()
 
 # ====================================================
 # SESSION STATE
@@ -85,7 +90,7 @@ if receipt_file is not None:
         tmp.write(receipt_file.read())
         tmp.flush()
         if upload_to_supabase("receipts", unique_name, tmp.name):
-            receipt_url = f"{SUPABASE_URL}/storage/v1/object/public/receipts/{unique_name}"
+            receipt_url = f"{st.secrets['supabase']['url']}/storage/v1/object/public/receipts/{unique_name}"
     receipt_name = unique_name
 
 # ====================================================
