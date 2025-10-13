@@ -8,7 +8,6 @@ import tempfile
 import mimetypes
 import re
 import uuid
-import json
 from supabase import create_client
 
 # ====================================================
@@ -37,6 +36,8 @@ if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 if "sort_order" not in st.session_state:
     st.session_state.sort_order = "desc"  # 기본 최신순
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame()
 
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
@@ -113,25 +114,17 @@ def load_and_ensure_ids(excel_path):
     return df
 
 # ====================================================
-# SYNC FUNCTIONS (디버깅 로그 추가)
+# SYNC FUNCTIONS
 # ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
         res = supabase.table("expense-data").select("*").execute()
-        st.write("🔍 Supabase raw response:", res)
         data = getattr(res, "data", None)
-
-        # ✅ 실제 가져온 데이터 수 확인
-        if not data:
-            st.warning("⚠️ Supabase에서 데이터가 비어 있음 (res.data == None or [])")
-        else:
-            st.success(f"✅ Supabase에서 {len(data)}개의 데이터 가져옴")
-
         supa_data = pd.DataFrame(data if data else [])
-        st.write("📄 Supabase DataFrame 미리보기:", supa_data.head())
-
         if supa_data.empty:
+            st.warning("⚠️ Supabase에 데이터가 없습니다.")
             return
+
         if "Date" in supa_data.columns:
             supa_data["Date"] = pd.to_datetime(supa_data["Date"], errors="coerce")
 
@@ -147,8 +140,11 @@ def sync_supabase_to_excel(excel_path):
 
         merged = pd.concat([local_df, supa_data]).drop_duplicates(subset=["id"], keep="last")
         merged.to_excel(excel_path, index=False)
-        st.success("💾 엑셀 파일에 Supabase 데이터 병합 완료")
 
+        # ✅ 화면에도 즉시 반영
+        st.session_state.df = merged
+
+        st.success(f"💾 Supabase → Excel 동기화 완료 ({len(merged)} rows)")
     except Exception as e:
         st.error(f"❌ sync_supabase_to_excel failed: {e}")
 
@@ -174,7 +170,7 @@ if "reloaded" not in st.session_state:
     try:
         st.info("🔄 Reconnecting to Supabase and loading latest data...")
         supabase = get_supabase()
-        sync_supabase_to_excel("expenses.xlsx")
+        sync_supabase_to_excel(excel_file)
         st.success("✅ Latest data loaded from Supabase!")
         time.sleep(0.4)
         st.rerun()
@@ -187,3 +183,38 @@ if "reloaded" not in st.session_state:
 df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
+
+# ✅ 화면 데이터 가져오기 (st.session_state.df 우선)
+if not st.session_state.df.empty:
+    df = st.session_state.df
+else:
+    df = pd.read_excel(excel_file).fillna("-")
+
+# ====================================================
+# RELOAD CLEANED DATA
+# ====================================================
+df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+df["Month"] = df["Date"].dt.strftime("%Y-%m")
+
+# ====================================================
+# FILTERS
+# ====================================================
+months = sorted(df["Month"].dropna().unique(), reverse=True)
+f1, f2 = st.columns(2)
+with f1:
+    month_filter = st.selectbox("📅 Filter by Month", ["All"] + list(months))
+with f2:
+    cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
+
+view_df = df.copy()
+if month_filter != "All":
+    view_df = view_df[view_df["Month"] == month_filter]
+if cat_filter != "All":
+    view_df = view_df[view_df["Category"] == cat_filter]
+
+# ====================================================
+# SAVED RECORDS
+# ====================================================
+st.markdown("### 📋 Saved Records")
+st.dataframe(view_df, use_container_width=True)
