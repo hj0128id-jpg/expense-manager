@@ -11,9 +11,42 @@ import uuid
 from supabase import create_client
 
 # ====================================================
-# PAGE CONFIG
+# PAGE CONFIG (화이트 테마 강제)
 # ====================================================
-st.set_page_config(page_title="Duck San Expense Manager", layout="wide")
+st.set_page_config(
+    page_title="Duck San Expense Manager",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
+
+# 강제로 밝은 테마(화이트) 고정
+st.markdown("""
+    <style>
+    /* 전체 배경 흰색 고정 */
+    body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"] {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    /* 사이드바도 흰색 계열로 */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa !important;
+        color: #000000 !important;
+    }
+
+    /* 테이블, 버튼 등 다크모드 색상 방지 */
+    div[data-testid="stDataFrame"], .stButton>button, .stTextInput>div>div>input {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    /* 링크 색상 수정 (어두운 배경 대비용) */
+    a, a:visited {
+        color: #2b5876 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 
 # ====================================================
 # SUPABASE CONNECTION
@@ -271,3 +304,4 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
