@@ -8,6 +8,7 @@ import tempfile
 import mimetypes
 import re
 import uuid
+import json
 from supabase import create_client
 
 # ====================================================
@@ -35,9 +36,7 @@ if "active_row" not in st.session_state:
 if "active_mode" not in st.session_state:
     st.session_state.active_mode = None
 if "sort_order" not in st.session_state:
-    st.session_state.sort_order = "desc"  # 기본 최신순
-if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame()
+    st.session_state.sort_order = "desc"
 
 excel_file = "expenses.xlsx"
 os.makedirs("receipts", exist_ok=True)
@@ -114,7 +113,7 @@ def load_and_ensure_ids(excel_path):
     return df
 
 # ====================================================
-# SYNC FUNCTIONS
+# SYNC FUNCTIONS (핵심 수정)
 # ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
@@ -124,7 +123,6 @@ def sync_supabase_to_excel(excel_path):
         if supa_data.empty:
             st.warning("⚠️ Supabase에 데이터가 없습니다.")
             return
-
         if "Date" in supa_data.columns:
             supa_data["Date"] = pd.to_datetime(supa_data["Date"], errors="coerce")
 
@@ -141,9 +139,8 @@ def sync_supabase_to_excel(excel_path):
         merged = pd.concat([local_df, supa_data]).drop_duplicates(subset=["id"], keep="last")
         merged.to_excel(excel_path, index=False)
 
-        # ✅ 화면에도 즉시 반영
+        # ✅ 화면 즉시 반영
         st.session_state.df = merged
-
         st.success(f"💾 Supabase → Excel 동기화 완료 ({len(merged)} rows)")
     except Exception as e:
         st.error(f"❌ sync_supabase_to_excel failed: {e}")
@@ -184,21 +181,19 @@ df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
 
-# ✅ 화면 데이터 가져오기 (st.session_state.df 우선)
-if not st.session_state.df.empty:
+if "df" in st.session_state and not st.session_state.df.empty:
     df = st.session_state.df
-else:
-    df = pd.read_excel(excel_file).fillna("-")
 
 # ====================================================
 # RELOAD CLEANED DATA
 # ====================================================
+df = df.fillna("-")
 df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 df["Month"] = df["Date"].dt.strftime("%Y-%m")
 
 # ====================================================
-# FILTERS
+# FILTERS + UI
 # ====================================================
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2 = st.columns(2)
@@ -214,7 +209,95 @@ if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
 
 # ====================================================
-# SAVED RECORDS
+# SAVED RECORDS (원래 UI 그대로 복원)
 # ====================================================
 st.markdown("### 📋 Saved Records")
-st.dataframe(view_df, use_container_width=True)
+
+header_cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
+with header_cols[0]:
+    sort_icon = "⬇️" if st.session_state.sort_order == "desc" else "⬆️"
+    if st.button(f"📅 Date {sort_icon}"):
+        st.session_state.sort_order = "asc" if st.session_state.sort_order == "desc" else "desc"
+        st.rerun()
+
+for c, h in zip(header_cols[1:], ["Category", "Description", "Vendor", "Amount", "Receipt_url", "Actions"]):
+    c.markdown(f"**{h}**")
+
+ascending_flag = st.session_state.sort_order == "asc"
+view_df = view_df.sort_values("Date", ascending=ascending_flag).reset_index(drop=True)
+
+# === 기존 행별 버튼/수정/삭제/미리보기 전부 동일 유지 ===
+df["id"] = df["id"].astype(str)
+for _, row in view_df.iterrows():
+    row_id = str(row["id"])
+    cols = st.columns([1.2, 1.3, 2, 1.2, 1.2, 1.8, 1.5])
+    date_display = row["Date"].strftime("%Y-%m-%d") if pd.notna(row["Date"]) else "-"
+    cols[0].write(date_display)
+    cols[1].write(row["Category"])
+    cols[2].write(row["Description"])
+    cols[3].write(row["Vendor"])
+    cols[4].write(f"Rp {int(float(row['Amount'])):,}")
+    link = row.get("Receipt_url", "-")
+    cols[5].markdown(f"[🔗 View]({link})" if str(link).startswith("http") else "-", unsafe_allow_html=True)
+
+    with cols[6]:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("🧾", key=f"view_{row_id}"):
+                st.session_state.active_row, st.session_state.active_mode = row_id, "view"
+                st.rerun()
+        with c2:
+            if st.button("✏️", key=f"edit_{row_id}"):
+                st.session_state.active_row, st.session_state.active_mode = row_id, "edit"
+                st.rerun()
+        with c3:
+            if st.button("🗑️", key=f"del_{row_id}"):
+                df = df[df["id"] != row_id]
+                df.to_excel(excel_file, index=False)
+                supabase.table("expense-data").delete().eq("id", row_id).execute()
+                st.success("🗑️ Deleted!")
+                time.sleep(0.4)
+                st.rerun()
+
+    if st.session_state.active_row == row_id:
+        st.markdown("---")
+        if st.session_state.active_mode == "view":
+            st.subheader("🧾 Receipt Preview")
+            if link.startswith("http"):
+                if link.lower().endswith((".png", ".jpg", ".jpeg")):
+                    st.image(link, width=500)
+                elif link.lower().endswith(".pdf"):
+                    st.markdown(f"[📄 Open PDF]({link})", unsafe_allow_html=True)
+            if st.button("Close", key=f"close_{row_id}"):
+                st.session_state.active_row = None
+                st.session_state.active_mode = None
+                st.rerun()
+
+        elif st.session_state.active_mode == "edit":
+            st.subheader("✏️ Edit Record")
+            new_date = st.date_input("Date", value=row["Date"], key=f"date_{row_id}")
+            new_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"], key=f"cat_{row_id}", index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]) if row["Category"] in ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"] else 0)
+            new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{row_id}")
+            new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{row_id}")
+            new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{row_id}")
+
+            c4, c5 = st.columns(2)
+            with c4:
+                if st.button("💾 Save", key=f"save_{row_id}"):
+                    df.loc[df["id"] == row_id, ["Date", "Category", "Description", "Vendor", "Amount"]] = [str(new_date), new_cat, new_desc, new_vendor, int(new_amt)]
+                    df.to_excel(excel_file, index=False)
+                    supabase.table("expense-data").update({
+                        "Date": str(new_date),
+                        "Category": new_cat,
+                        "Description": new_desc,
+                        "Vendor": new_vendor,
+                        "Amount": int(new_amt)
+                    }).eq("id", row_id).execute()
+                    st.success("✅ Updated!")
+                    time.sleep(0.4)
+                    st.rerun()
+            with c5:
+                if st.button("Cancel", key=f"cancel_{row_id}"):
+                    st.session_state.active_row = None
+                    st.session_state.active_mode = None
+                    st.rerun()
