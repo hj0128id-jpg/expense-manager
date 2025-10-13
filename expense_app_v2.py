@@ -113,14 +113,22 @@ def load_and_ensure_ids(excel_path):
     return df
 
 # ====================================================
-# SYNC FUNCTIONS
+# SYNC FUNCTIONS (디버깅 로그 추가)
 # ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
-        # ✅ 수정된 부분: res.data를 직접 사용해 실제 데이터 불러오기
         res = supabase.table("expense-data").select("*").execute()
+        st.write("🔍 Supabase raw response:", res)
         data = getattr(res, "data", None)
+
+        # ✅ 실제 가져온 데이터 수 확인
+        if not data:
+            st.warning("⚠️ Supabase에서 데이터가 비어 있음 (res.data == None or [])")
+        else:
+            st.success(f"✅ Supabase에서 {len(data)}개의 데이터 가져옴")
+
         supa_data = pd.DataFrame(data if data else [])
+        st.write("📄 Supabase DataFrame 미리보기:", supa_data.head())
 
         if supa_data.empty:
             return
@@ -139,6 +147,8 @@ def sync_supabase_to_excel(excel_path):
 
         merged = pd.concat([local_df, supa_data]).drop_duplicates(subset=["id"], keep="last")
         merged.to_excel(excel_path, index=False)
+        st.success("💾 엑셀 파일에 Supabase 데이터 병합 완료")
+
     except Exception as e:
         st.error(f"❌ sync_supabase_to_excel failed: {e}")
 
@@ -177,6 +187,3 @@ if "reloaded" not in st.session_state:
 df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
-
-# 나머지 아래 부분은 원본 그대로 유지
-# (테이블 표시, 수정/삭제, Summary 등 전부 동일)
