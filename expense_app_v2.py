@@ -117,25 +117,30 @@ def load_and_ensure_ids(excel_path):
 # ====================================================
 def sync_supabase_to_excel(excel_path):
     try:
+        # ✅ 수정된 부분: res.data를 직접 사용해 실제 데이터 불러오기
         res = supabase.table("expense-data").select("*").execute()
-        data = json.loads(res.json())
+        data = getattr(res, "data", None)
         supa_data = pd.DataFrame(data if data else [])
+
         if supa_data.empty:
             return
         if "Date" in supa_data.columns:
             supa_data["Date"] = pd.to_datetime(supa_data["Date"], errors="coerce")
+
         if os.path.exists(excel_path):
             local_df = pd.read_excel(excel_path).fillna("-")
         else:
             local_df = pd.DataFrame(columns=supa_data.columns)
+
         if "Receipt" in local_df.columns and "Receipt_url" not in local_df.columns:
             local_df = local_df.rename(columns={"Receipt": "Receipt_url"})
         if "id" not in local_df.columns:
             local_df["id"] = "-"
+
         merged = pd.concat([local_df, supa_data]).drop_duplicates(subset=["id"], keep="last")
         merged.to_excel(excel_path, index=False)
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"❌ sync_supabase_to_excel failed: {e}")
 
 def sync_excel_to_supabase(df):
     try:
@@ -172,3 +177,6 @@ if "reloaded" not in st.session_state:
 df = load_and_ensure_ids(excel_file)
 sync_supabase_to_excel(excel_file)
 sync_excel_to_supabase(df)
+
+# 나머지 아래 부분은 원본 그대로 유지
+# (테이블 표시, 수정/삭제, Summary 등 전부 동일)
