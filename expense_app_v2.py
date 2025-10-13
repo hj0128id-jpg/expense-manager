@@ -88,6 +88,37 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+    <style>
+    /* selectbox(카테고리) 완전 화이트 강제 */
+    div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #d0d0d0 !important;
+    }
+
+    /* select 내부 옵션도 하얗게 */
+    div[data-baseweb="popover"] {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    /* number input (Amount) 내부 버튼 영역 포함 전체 하얗게 */
+    div[data-baseweb="input"] {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    /* number input의 + / - 버튼 영역 색상 통일 */
+    div[data-testid="stNumberInput"] button {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #cccccc !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 
 
 # ====================================================
@@ -346,5 +377,6 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
 
