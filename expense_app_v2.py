@@ -265,18 +265,38 @@ if month_filter != "All":
 if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
 
-# ✅ 필터된 결과 다운로드 버튼 추가
+# ✅ 필터된 결과 다운로드 버튼 (화이트 스타일)
 if not view_df.empty:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_xlsx:
         view_df.to_excel(tmp_xlsx.name, index=False)
         tmp_xlsx.seek(0)
-        st.download_button(
-            label="⬇️ Download Filtered Data (Excel)",
-            data=tmp_xlsx.read(),
-            file_name=f"filtered_expense_{month_filter}_{cat_filter}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+
+        st.markdown("""
+            <style>
+            .white-download-btn > button {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                border: 1px solid #cccccc !important;
+                border-radius: 8px !important;
+                font-weight: 500 !important;
+                padding: 0.6em 1em !important;
+            }
+            .white-download-btn > button:hover {
+                background-color: #f3f3f3 !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        with st.container():
+            st.markdown('<div class="white-download-btn">', unsafe_allow_html=True)
+            st.download_button(
+                label="⬇️ Download Filtered Data (Excel)",
+                data=tmp_xlsx.read(),
+                file_name=f"filtered_expense_{month_filter}_{cat_filter}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("No data to download for the selected filters.")
 
