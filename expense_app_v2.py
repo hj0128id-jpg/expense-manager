@@ -118,9 +118,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-
-
-
 # ====================================================
 # SUPABASE CONNECTION
 # ====================================================
@@ -216,7 +213,6 @@ if st.button("💾 Save Record", use_container_width=True):
         "created_at": datetime.utcnow().isoformat(),
     }
 
-    # 엑셀 반영
     new_df = pd.DataFrame([new_data])
     if os.path.exists(excel_file):
         old_df = pd.read_excel(excel_file).fillna("-")
@@ -227,7 +223,6 @@ if st.button("💾 Save Record", use_container_width=True):
     df_all = df_all.sort_values("Date", ascending=False)
     df_all.to_excel(excel_file, index=False)
 
-    # Supabase 반영
     try:
         supabase.table("expense-data").insert([new_data]).execute()
         st.success("✅ Record Saved to Supabase!")
@@ -269,6 +264,21 @@ if month_filter != "All":
     view_df = view_df[view_df["Month"] == month_filter]
 if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
+
+# ✅ 필터된 결과 다운로드 버튼 추가
+if not view_df.empty:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_xlsx:
+        view_df.to_excel(tmp_xlsx.name, index=False)
+        tmp_xlsx.seek(0)
+        st.download_button(
+            label="⬇️ Download Filtered Data (Excel)",
+            data=tmp_xlsx.read(),
+            file_name=f"filtered_expense_{month_filter}_{cat_filter}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+else:
+    st.info("No data to download for the selected filters.")
 
 # ====================================================
 # SAVED RECORDS
@@ -377,6 +387,3 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
-
-
-
