@@ -254,15 +254,23 @@ df = load_data()
 # ====================================================
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 
+# 현재 월 문자열 (예: "2025-12")
 current_month = datetime.today().strftime("%Y-%m")
-default_month = current_month if current_month in months else current_month  # 달 데이터 없을 때도 선택 유지
+
+# 옵션 목록: All + (months에 이미 없으면 current_month 포함) + 기존 months
+months_options = ["All"] + list(months)
+if current_month not in months_options:
+    # current_month가 months에 없으면 All 다음에 삽입해서 기본 선택 가능하게 만듦
+    months_options.insert(1, current_month)
 
 f1, f2 = st.columns(2)
 with f1:
+    # 기본값 인덱스: current_month가 목록에 있으면 그 인덱스로, 아니면 0(All)
+    default_index = months_options.index(current_month) if current_month in months_options else 0
     month_filter = st.selectbox(
         "📅 Filter by Month",
-        ["All"] + list(months),
-        index=(["All"] + list(months)).index(default_month) if default_month in months else 0
+        months_options,
+        index=default_index
     )
 
 with f2:
@@ -279,6 +287,7 @@ if cat_filter != "All":
 
 # === If empty, show message ===
 if view_df.empty:
+    # month_filter가 현재달이지만 데이터가 없다면 빈 테이블과 안내문을 보여줌
     st.info(f"📭 '{month_filter}' 기간에 해당되는 데이터가 없습니다.")
 
 # ✅ 필터된 결과 다운로드 버튼 (화이트 스타일)
@@ -423,6 +432,7 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
 
 
