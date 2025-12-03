@@ -248,7 +248,9 @@ def load_data():
     return df
 
 df = load_data()
-
+# 🔍 Debug: Month 값 확인용
+st.write("Months in DF:", df["Month"].unique())
+st.write("Current month:", datetime.today().strftime("%Y-%m"))
 # ====================================================
 # FILTER
 # ====================================================
@@ -418,6 +420,7 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
 
 
