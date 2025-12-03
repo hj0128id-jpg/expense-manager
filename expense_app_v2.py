@@ -248,28 +248,27 @@ def load_data():
     return df
 
 df = load_data()
-# 🔍 Debug: Month 값 확인용
-st.write("Months in DF:", df["Month"].unique())
-st.write("Current month:", datetime.today().strftime("%Y-%m"))
+
 # ====================================================
 # FILTER
 # ====================================================
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 
+current_month = datetime.today().strftime("%Y-%m")
+default_month = current_month if current_month in months else current_month  # 달 데이터 없을 때도 선택 유지
+
 f1, f2 = st.columns(2)
 with f1:
-    current_month = datetime.today().strftime("%Y-%m")
-    default_month = current_month if current_month in months else "All"
     month_filter = st.selectbox(
         "📅 Filter by Month",
         ["All"] + list(months),
-        index=(["All"] + list(months)).index(default_month)
+        index=(["All"] + list(months)).index(default_month) if default_month in months else 0
     )
 
 with f2:
     cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
 
-# === Apply filtering to DataFrame ===
+# === Apply filtering ===
 view_df = df.copy()
 
 if month_filter != "All":
@@ -277,6 +276,10 @@ if month_filter != "All":
 
 if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
+
+# === If empty, show message ===
+if view_df.empty:
+    st.info(f"📭 '{month_filter}' 기간에 해당되는 데이터가 없습니다.")
 
 # ✅ 필터된 결과 다운로드 버튼 (화이트 스타일)
 if not view_df.empty:
@@ -420,6 +423,7 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
 
 
