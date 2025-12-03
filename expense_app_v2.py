@@ -255,7 +255,9 @@ df = load_data()
 months = sorted(df["Month"].dropna().unique(), reverse=True)
 f1, f2 = st.columns(2)
 with f1:
-    month_filter = st.selectbox("📅 Filter by Month", ["All"] + list(months))
+    current_month = datetime.today().strftime("%Y-%m")
+    default_month = current_month if current_month in months else "All"
+    month_filter = st.selectbox("📅 Filter by Month", ["All"] + list(months), index=(["All"] + list(months)).index(default_month))
 with f2:
     cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
 
@@ -407,4 +409,5 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
