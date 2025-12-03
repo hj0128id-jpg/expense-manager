@@ -180,7 +180,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     date = st.date_input("Date", datetime.today())
 with col2:
-    category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"])
+    category = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Hotel", "Office", "Office Supply", "ETC"])
 with col3:
     amount = st.number_input("Amount (Rp)", min_value=0, step=1000)
 
@@ -356,7 +356,7 @@ for _, row in view_df.iterrows():
         st.markdown("---")
         st.subheader("✏️ Edit Record")
         new_date = st.date_input("Date", value=row["Date"], key=f"date_{row_id}")
-        new_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"], index=["Transportation", "Meals", "Entertainment", "Office", "Office Supply", "ETC"].index(row["Category"]), key=f"cat_{row_id}")
+        new_cat = st.selectbox("Category", ["Transportation", "Meals", "Entertainment", "Hotel", "Office", "Office Supply", "ETC"], index=["Transportation", "Meals", "Entertainment", "Hotel", "Office", "Office Supply", "ETC"].index(row["Category"]), key=f"cat_{row_id}")
         new_desc = st.text_input("Description", value=row["Description"], key=f"desc_{row_id}")
         new_vendor = st.text_input("Vendor", value=row["Vendor"], key=f"ven_{row_id}")
         new_amt = st.number_input("Amount (Rp)", value=float(row["Amount"]), key=f"amt_{row_id}")
@@ -407,3 +407,4 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
