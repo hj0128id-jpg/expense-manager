@@ -253,17 +253,26 @@ df = load_data()
 # FILTER
 # ====================================================
 months = sorted(df["Month"].dropna().unique(), reverse=True)
+
 f1, f2 = st.columns(2)
 with f1:
     current_month = datetime.today().strftime("%Y-%m")
     default_month = current_month if current_month in months else "All"
-    month_filter = st.selectbox("📅 Filter by Month", ["All"] + list(months), index=(["All"] + list(months)).index(default_month))
+    month_filter = st.selectbox(
+        "📅 Filter by Month",
+        ["All"] + list(months),
+        index=(["All"] + list(months)).index(default_month)
+    )
+
 with f2:
     cat_filter = st.selectbox("📂 Filter by Category", ["All"] + sorted(df["Category"].unique()))
 
+# === Apply filtering to DataFrame ===
 view_df = df.copy()
+
 if month_filter != "All":
     view_df = view_df[view_df["Month"] == month_filter]
+
 if cat_filter != "All":
     view_df = view_df[view_df["Category"] == cat_filter]
 
@@ -409,5 +418,6 @@ with st.expander("📊 Monthly & Category Summary", expanded=False):
         summary_df_display["Date"] = summary_df_display["Date"].dt.strftime("%Y-%m-%d")
         summary_df_display["Amount"] = summary_df_display["Amount"].apply(lambda x: f"Rp {int(x):,}")
         st.dataframe(summary_df_display, use_container_width=True)
+
 
 
